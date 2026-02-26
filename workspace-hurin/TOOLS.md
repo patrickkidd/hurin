@@ -37,12 +37,13 @@
 
 ### Spawn a task
 ```bash
-spawn-task.sh --task <task-id> --description "<short desc>" <<'PROMPT'
+spawn-task.sh --repo <btcopilot|familydiagram> --task <task-id> --description "<short desc>" <<'PROMPT'
 <your prompt here>
 PROMPT
 ```
 
 Options:
+- `--repo <name>` — target repo where PRs land (required: btcopilot or familydiagram)
 - `--branch <name>` — custom branch name (default: `feat/<task-id>`)
 - `--full-sync` — run `uv sync` in worktree instead of symlinking .venv (for dependency changes)
 
