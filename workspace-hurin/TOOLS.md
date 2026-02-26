@@ -71,7 +71,9 @@ ls ~/.openclaw/monitor/failures/            # Failure logs for Ralph Loop
 
 Full documentation of this agent setup, file layout, config, workflow, and admin procedures:
 
-`~/Projects/theapp/adrs/ADR-0001-agent-swarm.md`
+`https://github.com/patrickkidd/hurin/blob/main/adrs/ADR-0001-agent-swarm.md`
+
+Local clone (if checked out): `~/Projects/hurin/adrs/ADR-0001-agent-swarm.md`
 
 Read this when asked about how the system works or how to change something.
 
