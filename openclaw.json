@@ -24,23 +24,34 @@
       },
       "models": {
         "anthropic/claude-sonnet-4-6": {
-          "alias": "sonnet"
+          "alias": "sonnet",
+          "params": {
+            "cacheRetention": "long"
+          }
         },
         "anthropic/claude-haiku-4-5": {
-          "alias": "haiku"
+          "alias": "haiku",
+          "params": {
+            "cacheRetention": "short"
+          }
         },
-        "anthropic/claude-opus-4-6": {}
+        "anthropic/claude-opus-4-6": {
+          "params": {
+            "cacheRetention": "long"
+          }
+        }
       },
       "contextTokens": 64000,
       "compaction": {
         "mode": "safeguard",
-        "reserveTokensFloor": 4000,
+        "reserveTokensFloor": 10000,
         "memoryFlush": {
           "enabled": true
         }
       },
       "heartbeat": {
-        "model": "anthropic/claude-haiku-4-5"
+        "model": "anthropic/claude-haiku-4-5",
+        "every": "55m"
       },
       "maxConcurrent": 2,
       "subagents": {
@@ -178,6 +189,11 @@
       "discord": {
         "enabled": true
       }
+    }
+  },
+  "diagnostics": {
+    "cacheTrace": {
+      "enabled": true
     }
   }
 }
