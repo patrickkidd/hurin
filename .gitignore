@@ -25,6 +25,12 @@ monitor/cron.log
 monitor/review.log
 monitor/failures/
 
+# === Workspace personal/private artifacts ===
+workspace-hurin/career/
+workspace-hurin/decisions-log.md
+workspace-hurin/memory/
+workspace-hurin/MEMORY.md
+
 # === General ===
 *.lock
 *.pkg
