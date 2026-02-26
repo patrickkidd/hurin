@@ -1,0 +1,32 @@
+# === Auth & secrets ===
+**/auth-profiles.json
+auth*.json
+identity/
+devices/
+
+# === OpenClaw runtime/system (not our config) ===
+canvas/
+completions/
+cron/
+logs/
+memory/*.sqlite
+workspace/
+update-check.json
+*.bak
+
+# === Session data ===
+agents/*/sessions/
+**/sessions/*.jsonl
+*.jsonl
+
+# === Monitor runtime (ephemeral) ===
+monitor/monitor.log
+monitor/cron.log
+monitor/review.log
+monitor/failures/
+
+# === General ===
+*.lock
+*.pkg
+*.tmp
+.DS_Store

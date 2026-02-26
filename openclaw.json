@@ -1,0 +1,183 @@
+{
+  "meta": {
+    "lastTouchedVersion": "2026.2.24",
+    "lastTouchedAt": "2026-02-26T01:32:29.225Z"
+  },
+  "wizard": {
+    "lastRunAt": "2026-02-26T01:32:29.194Z",
+    "lastRunVersion": "2026.2.24",
+    "lastRunCommand": "configure",
+    "lastRunMode": "local"
+  },
+  "auth": {
+    "profiles": {
+      "anthropic:default": {
+        "provider": "anthropic",
+        "mode": "api_key"
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "anthropic/claude-sonnet-4-6"
+      },
+      "models": {
+        "anthropic/claude-sonnet-4-6": {
+          "alias": "sonnet"
+        },
+        "anthropic/claude-haiku-4-5": {
+          "alias": "haiku"
+        },
+        "anthropic/claude-opus-4-6": {}
+      },
+      "contextTokens": 64000,
+      "compaction": {
+        "mode": "safeguard",
+        "reserveTokensFloor": 4000,
+        "memoryFlush": {
+          "enabled": true
+        }
+      },
+      "heartbeat": {
+        "model": "anthropic/claude-haiku-4-5"
+      },
+      "maxConcurrent": 2,
+      "subagents": {
+        "maxConcurrent": 4
+      },
+      "sandbox": {
+        "mode": "off",
+        "workspaceAccess": "rw"
+      },
+      "typingMode": "message",
+      "typingIntervalSeconds": 6
+    },
+    "list": [
+      {
+        "id": "hurin",
+        "name": "hurin",
+        "workspace": "/Users/hurin/.openclaw/workspace-hurin",
+        "agentDir": "/Users/hurin/.openclaw/agents/hurin/agent",
+        "model": "anthropic/claude-sonnet-4-6",
+        "tools": {
+          "allow": [
+            "exec",
+            "read",
+            "write",
+            "edit",
+            "sessions_list",
+            "sessions_history",
+            "sessions_send",
+            "sessions_spawn",
+            "session_status"
+          ]
+        }
+      }
+    ]
+  },
+  "tools": {
+    "sessions": {
+      "visibility": "all"
+    },
+    "agentToAgent": {
+      "enabled": true,
+      "allow": [
+        "hurin"
+      ]
+    }
+  },
+  "bindings": [
+    {
+      "agentId": "hurin",
+      "match": {
+        "channel": "discord",
+        "accountId": "hurin",
+        "peer": {
+          "kind": "channel",
+          "id": "1475607956698562690"
+        }
+      }
+    },
+    {
+      "agentId": "hurin",
+      "match": {
+        "channel": "discord",
+        "accountId": "hurin",
+        "peer": {
+          "kind": "channel",
+          "id": "1475608130040762482"
+        }
+      }
+    }
+  ],
+  "messages": {
+    "ackReactionScope": "group-mentions"
+  },
+  "commands": {
+    "native": "auto",
+    "nativeSkills": "auto",
+    "restart": true,
+    "ownerDisplay": "raw"
+  },
+  "session": {
+    "reset": {
+      "idleMinutes": 15
+    },
+    "sendPolicy": {
+      "default": "allow",
+      "rules": []
+    }
+  },
+  "channels": {
+    "discord": {
+      "enabled": true,
+      "groupPolicy": "allowlist",
+      "historyLimit": 3,
+      "accounts": {
+        "hurin": {
+          "enabled": true,
+          "historyLimit": 50,
+          "token": "REDACTED_DISCORD_TOKEN_OLD",
+          "allowBots": true,
+          "groupPolicy": "allowlist",
+          "guilds": {
+            "1474833522710548490": {
+              "requireMention": false,
+              "users": [
+                "1237951508742672431"
+              ],
+              "channels": {
+                "1475607956698562690": {
+                  "allow": true
+                },
+                "1475608130040762482": {
+                  "allow": true
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "gateway": {
+    "mode": "local",
+    "bind": "loopback",
+    "auth": {
+      "mode": "token",
+      "token": "REDACTED_GATEWAY_TOKEN_OLD"
+    },
+    "trustedProxies": [
+      "127.0.0.1",
+      "::1"
+    ]
+  },
+  "plugins": {
+    "entries": {
+      "discord": {
+        "enabled": true
+      }
+    }
+  }
+}
