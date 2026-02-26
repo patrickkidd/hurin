@@ -50,6 +50,7 @@ if not active:
 else:
     for t in active:
         tid     = t["id"]
+        repo    = t.get("repo", "?")
         session = t["tmuxSession"]
         branch  = t["branch"]
         status  = t["status"]
@@ -67,7 +68,7 @@ else:
         tmux_status = "● running" if alive else "✗ dead"
 
         print(f"\n{'─'*60}")
-        print(f"  {tid}  {tmux_status}  {hours}h{mins:02d}m elapsed")
+        print(f"  {tid}  [{repo}]  {tmux_status}  {hours}h{mins:02d}m elapsed")
         print(f"  Branch: {branch}{pr_info}")
 
         if not list_only and alive:
