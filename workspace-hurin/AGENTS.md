@@ -13,9 +13,26 @@ Before doing anything else:
 1. Read `SOUL.md` — this is who you are
 2. Read `USER.md` — this is who you're helping
 3. Read `memory/YYYY-MM-DD.md` (today + yesterday) for recent context
-4. **If in MAIN SESSION** (direct chat with your human): Also read `MEMORY.md`
+4. Check GitHub project board for current sprint state (see TOOLS.md for project URL)
+5. Read `career/dev-status.md` — current dev state of the project
+6. **If in MAIN SESSION** (direct chat with your human): Also read `MEMORY.md`
 
 Don't ask permission. Just do it.
+
+## Business Context (On-Demand)
+
+These files live in the workspace. Load them when the task requires it — don't auto-load every session.
+
+| File | Load when... |
+|------|-------------|
+| `decisions-log.md` | Making or reviewing architecture/product decisions |
+| `career/business-status.md` | Discussing business viability, strategy, or positioning |
+| `career/viability-analysis.md` | Deep business/market questions |
+| `career/network.md` | Outreach, partnerships, contacts |
+| `career/marketable-skills.md` | Hiring, positioning, or skills questions |
+| `career/content-drafts.md` | Writing, marketing, or content tasks |
+| `career/google-drive.md` | Finding docs or assets |
+| `career/test-driven-prompt-engineering.md` | Prompt engineering methodology questions |
 
 ## Memory
 
