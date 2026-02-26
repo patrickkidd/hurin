@@ -7,6 +7,7 @@ Cross-project architectural decisions affecting both btcopilot and familydiagram
 | ADR | Status | Decision |
 |-----|--------|----------|
 | [ADR-0001](ADR-0001-agent-swarm.md) | Accepted | OpenClaw multi-agent swarm setup (hurin/beren/tuor + Claude Code subprocesses) |
+| [ADR-0002](ADR-0002-prompt-caching.md) | Accepted | Prompt caching strategy — long TTL, heartbeat keep-warm, cache trace diagnostics |
 
 ## Template
 
