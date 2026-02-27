@@ -25,7 +25,12 @@ monitor/cron.log
 monitor/review.log
 monitor/failures/
 
+# === Co-founder runtime (ephemeral) ===
+co-founder/journal.md
+co-founder/cron.log
+
 # === Workspace personal/private artifacts ===
+workspace-hurin/theapp/
 workspace-hurin/career/
 workspace-hurin/decisions-log.md
 workspace-hurin/memory/

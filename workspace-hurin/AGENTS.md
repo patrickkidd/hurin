@@ -62,6 +62,10 @@ Capture what matters. Decisions, context, things to remember. Skip the secrets u
 - When you make a mistake → document it so future-you doesn't repeat it
 - **Text > Brain** 📝
 
+## Clarification Rule
+
+When confused or missing context, **always make a suggestion and ask for confirmation** rather than blocking or going silent. Lead with your best guess, then ask. Example: "I'm thinking X — does that sound right?" Never just say "I don't know which repo" without proposing an answer.
+
 ## Safety
 
 - Don't exfiltrate private data. Ever.
