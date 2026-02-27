@@ -17,17 +17,48 @@ A scheduled "co-founder" system that runs Claude Code through different strategi
 ### Architecture
 
 ```
-cron (9 schedules)
+cron (9 schedules) or /cofounder skill (on-demand)
   └── co-founder.sh <lens-name>
         ├── Read lens prompt from lenses/<name>.md
         ├── Read last 150 lines of journal.md (memory)
         ├── Assemble prompt → /tmp/co-founder-prompt.txt
-        ├── cd $THEAPP && claude -p --model claude-opus-4-6 < prompt  ($0)
+        ├── claude -p --model opus --max-turns 10 --output-format json  ($0)
+        │     └── CC uses multiple turns: gather data → dig deeper → synthesize
+        ├── Parse JSON → extract result + session_id
+        ├── Save session ID to sessions/<lens>-session.txt (for follow-up)
+        ├── Save full briefing to briefings/<lens>-<date>.md
         ├── Append output to journal.md (capped at 1000 lines)
         └── discord-post.sh → #co-founder channel (split at 1900 chars)
 ```
 
-This bypasses hurin entirely — direct `claude -p` calls from cron. $0 total cost.
+Runs from cron (scheduled) or on-demand via `/cofounder <lens>` skill in Discord. $0 total cost.
+
+### Depth Model
+
+Each run gives CC **10 agentic turns** (configurable via `MAX_TURNS` in config.sh). The prompt instructs CC to:
+1. **Turns 1-3:** Gather data — read project files, run git/gh commands, explore the codebase
+2. **Turns 4-6:** Dig deeper — investigate specific areas, read source files, check patterns
+3. **Turns 7+:** Synthesize — write the briefing with concrete citations (file paths, line numbers, PR numbers)
+
+Output is **unconstrained** — no character limit. CC writes as much as the analysis warrants. Discord posting handles splitting across messages. Full output is saved to `briefings/` for reference.
+
+### Session Resumption
+
+Each run saves its Claude session ID to `sessions/<lens>-session.txt`. Patrick can continue the conversation with:
+
+```
+/cofounder followup <lens> <question>
+```
+
+This resumes the original CC session via `--resume <session-id>`, giving CC full context of its analysis. The follow-up runs synchronously through hurin and replies in the current channel.
+
+### On-Demand Triggering
+
+The `/cofounder` OpenClaw skill allows Patrick to run any lens on demand:
+- `/cofounder` — list available lenses
+- `/cofounder <lens>` — run a lens (async, posts to #co-founder in ~5-10 min)
+- `/cofounder followup <lens> <question>` — continue a briefing conversation
+- `/cofounder read <lens>` — show the latest briefing
 
 ### Lens Rotation
 
@@ -50,23 +81,30 @@ This bypasses hurin entirely — direct `claude -p` calls from cron. $0 total co
 - CC reads the last 150 lines before each run for continuity
 - CC is instructed to reference its own past observations and build on them
 - Trimming removes oldest entries when cap is exceeded
+- Full briefings are also saved to `briefings/<lens>-<date>.md` (not trimmed)
 
 ### Discord Integration
 
 - Posts to #co-founder channel (ID: 1476739270663213197)
-- Messages split on paragraph boundaries at 1900 chars (Discord 2000 limit)
+- Messages split on line boundaries at 1900 chars (Discord 2000 limit)
+- Full briefing saved to `briefings/` regardless of Discord posting
 - Channel is bound to hurin in openclaw.json so Patrick can reply and get CC responses
-- Thread bindings enabled for multi-turn follow-up conversations
+- `/cofounder followup` resumes the CC session for context-aware follow-ups
 
 ## File Layout
 
 ```
 ~/.openclaw/co-founder/
-  config.sh              # Paths, channel ID, Discord token, settings
-  co-founder.sh          # Main runner script
+  config.sh              # Paths, channel ID, Discord token, depth settings
+  co-founder.sh          # Main runner script (agentic, multi-turn)
   discord-post.sh        # Discord API posting with message splitting
   journal.md             # Persistent memory (append-only, 1000 line cap)
   cron.log               # Cron output log
+  briefings/             # Full briefing output files (gitignored)
+    <lens>-<date>.md     # e.g. architecture-2026-02-26.md
+    <lens>-latest.md     # Symlink to most recent briefing per lens
+  sessions/              # CC session IDs for resumption (gitignored)
+    <lens>-session.txt   # Session ID from last run of each lens
   lenses/
     project-pulse.md     # Daily operational awareness
     product-vision.md    # Product direction and UX
@@ -77,6 +115,9 @@ This bypasses hurin entirely — direct `claude -p` calls from cron. $0 total co
     customer-support.md  # Support patterns and community
     training-programs.md # Partnership and outreach programs
     process-retro.md     # Development process retrospective
+
+~/.openclaw/skills/cofounder/
+  SKILL.md               # /cofounder slash command (run, followup, read)
 ```
 
 ## How to Add/Edit/Remove Lenses

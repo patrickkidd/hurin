@@ -13,6 +13,13 @@ CLAUDE_BIN="$HOME/.local/bin/claude"
 JOURNAL_MAX_LINES=1000
 JOURNAL_CONTEXT_LINES=150
 
+# Depth settings
+MAX_TURNS=10
+
+# Briefings & sessions (persistent output, session resumption)
+BRIEFINGS_DIR="$COFOUNDER_DIR/briefings"
+SESSIONS_DIR="$COFOUNDER_DIR/sessions"
+
 # Discord
 DISCORD_BOT_TOKEN="MTQ3NDgzNDg0NTczNjg5NDYyNA.G9KNE_.CDsRXvfYJtB4zG_SLjbhmAqVcl3-Cx1aBeK64U"
 DISCORD_GUILD_ID="1474833522710548490"
