@@ -1,0 +1,15 @@
+{
+  "actions": [
+    {
+      "id": "wild-ideas-2026-02-27-1",
+      "title": "Populate PlanView with cross-generational pattern summary",
+      "category": "ux",
+      "effort": "small",
+      "confidence": 0.7,
+      "repo": "btcopilot",
+      "plan": "1. Add a new endpoint POST /personal/diagrams/{id}/patterns that takes committed people+events, groups by generation using Person.parents links, and calls Gemini with a prompt asking for cross-generational SARF pattern echoes. 2. Return a PatternSummary dataclass with recurring_patterns list. 3. In familydiagram, add a PatternModel that calls this endpoint. 4. Replace PlanView.qml placeholder with a simple list of pattern cards. This fills the empty 'Plan' tab with genuinely useful clinical content.",
+      "spawn_prompt": "Add a cross-generational pattern detection feature to fill the empty PlanView tab.\n\nBackend (btcopilot):\n1. Create btcopilot/btcopilot/personal/patterns.py with:\n   - A PATTERN_PROMPT that asks Gemini to identify recurring SARF patterns across generations\n   - A PatternSummary dataclass with fields: patterns: list[Pattern] where Pattern has title, description, generation_1_events: list[int], generation_2_events: list[int], sarf_variable: str\n   - A detect_patterns(diagram_data: DiagramData) function that groups events by generation using Person.parents links, calls gemini_structured_sync with the prompt\n2. Add endpoint POST /personal/diagrams/<int:diagram_id>/patterns in btcopilot/btcopilot/personal/routes/diagrams.py\n\nFrontend (familydiagram):\n3. Create familydiagram/pkdiagram/personal/patternmodel.py - QObject that calls the patterns endpoint, stores results\n4. Update PlanView.qml to show pattern cards instead of placeholder text\n5. Wire patternModel into PersonalAppController\n\nKey files to read first:\n- btcopilot/btcopilot/personal/clusters.py (pattern for Gemini structured calls)\n- btcopilot/btcopilot/schema.py (DiagramData, Person.parents)\n- familydiagram/pkdiagram/resources/qml/Personal/PlanView.qml (currently placeholder)\n- familydiagram/pkdiagram/personal/clustermodel.py (pattern for frontend model)\n\nSuccess criteria: PlanView tab shows AI-generated cross-generational pattern insights when user has committed events across 2+ generations. Falls back to helpful message when insufficient data.",
+      "success_metric": "PlanView shows cross-generational pattern cards from Gemini analysis"
+    }
+  ]
+}
