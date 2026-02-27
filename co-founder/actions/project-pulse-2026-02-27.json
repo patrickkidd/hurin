@@ -1,0 +1,37 @@
+{
+  "actions": [
+    {
+      "id": "project-pulse-2026-02-27-1",
+      "title": "Fix review-prs.sh PATH and label creation",
+      "category": "infrastructure",
+      "effort": "trivial",
+      "confidence": 0.95,
+      "repo": "none",
+      "plan": "1. Add PATH export for /opt/homebrew/bin at top of review-prs.sh\n2. Create 'reviewed-by-claude' label in both repos via gh\n3. Verify the script completes a full cycle\n4. Truncate the spammy review.log",
+      "spawn_prompt": "Fix the broken review-prs.sh automated PR review system at /Users/hurin/.openclaw/monitor/review-prs.sh.\n\nRoot cause: cron doesn't have /opt/homebrew/bin in PATH, so `gh` and `claude` commands fail.\n\nSteps:\n1. Edit /Users/hurin/.openclaw/monitor/review-prs.sh — add this line after `set -euo pipefail`:\n   export PATH=\"/opt/homebrew/bin:$PATH\"\n\n2. Create the label in both repos:\n   cd /Users/hurin/.openclaw/workspace-hurin/theapp/btcopilot && gh label create 'reviewed-by-claude' --description 'PR has been reviewed by Claude' --color '7057ff'\n   cd /Users/hurin/.openclaw/workspace-hurin/theapp/familydiagram && gh label create 'reviewed-by-claude' --description 'PR has been reviewed by Claude' --color '7057ff'\n\n3. Truncate the spammy log: > /Users/hurin/.openclaw/monitor/review.log\n\n4. Do a dry run to verify the script works: bash /Users/hurin/.openclaw/monitor/review-prs.sh --dry\n\n5. Check that the dry run log shows 'Would review PR #X' or 'No open PRs' instead of 'Creating label'.\n\nAlso verify that `which claude` works from the script's PATH context — the review step calls `claude -p` which also needs to be in PATH.\n\nSuccess criteria: review-prs.sh --dry completes without errors and logs actual PR review activity for both repos.",
+      "success_metric": "review-prs.sh --dry completes and logs PR review status for both btcopilot and familydiagram repos"
+    },
+    {
+      "id": "project-pulse-2026-02-27-2",
+      "title": "Clear stale active-tasks.json",
+      "category": "infrastructure",
+      "effort": "trivial",
+      "confidence": 0.95,
+      "repo": "none",
+      "plan": "1. Write empty tasks array to active-tasks.json\n2. This does NOT remove the T7-4 worktree (Patrick needs to review those changes first)",
+      "spawn_prompt": "Clear the stale active-tasks.json that still shows a failed T7-4 task.\n\nWrite this content to /Users/hurin/.openclaw/workspace-hurin/theapp/.clawdbot/active-tasks.json:\n{\"tasks\": []}\n\nDo NOT remove any worktrees — the T7-4 worktree has uncommitted changes that need human review.\n\nSuccess criteria: active-tasks.json contains empty tasks array.",
+      "success_metric": "active-tasks.json has {\"tasks\": []}"
+    },
+    {
+      "id": "project-pulse-2026-02-27-3",
+      "title": "Close ancient PR btcopilot#10",
+      "category": "velocity",
+      "effort": "trivial",
+      "confidence": 0.95,
+      "repo": "btcopilot",
+      "plan": "1. Close btcopilot PR #10 with comment explaining it was superseded by FD-300 (PR #11, merged Dec 2025)\n2. Delete the branch if possible",
+      "spawn_prompt": "Close the stale PR #10 in btcopilot repo.\n\ncd /Users/hurin/.openclaw/workspace-hurin/theapp/btcopilot\ngh pr close 10 --comment 'Closing: superseded by FD-300 (PR #11, merged Dec 2025). The synthetic user generator was fully implemented in that PR.'\ngh pr view 10 --json headRefName --jq '.headRefName' | xargs -I {} git push origin --delete {} 2>/dev/null || echo 'Branch already deleted or protected'\n\nSuccess criteria: PR #10 shows as closed.",
+      "success_metric": "btcopilot PR #10 is closed"
+    }
+  ]
+}
