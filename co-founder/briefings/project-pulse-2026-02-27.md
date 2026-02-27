@@ -1,162 +1,158 @@
 # Co-Founder Briefing: project-pulse
-**Date:** 2026-02-27 06:29 AKST
-**Session:** b888f8f4-e023-4798-98cb-47e13f278998
+**Date:** 2026-02-27 09:06 AKST
+**Session:** 19c486b5-3dbe-44d0-acf5-d5bc3907588f
 **Turns:** 10 max
-
----
-
-Good. Now I have a comprehensive picture. Let me write the briefing.
-
----
-
-**Project Pulse — Thursday, February 27, 2026**
 
 ---
 
 **Progress Since Last Check**
 
-The last 48 hours were productive on T7-12 (auto-detect event clusters on PDP accept). This is the second-to-last code task before Goal 1 validation:
+Quiet 24 hours. The only commits were T7-12 related, all on the feature branch — not master:
 
-- **btcopilot `0fa8ac1`**: T7-12 auto-detect cluster tests — idempotency test, single-event edge case, full acceptance flow simulating PDP accept -> cluster detection with 10 events. All 12 cluster tests passing. PR #32 opened, Gemini Code Assist reviewed it (LGTM with minor style suggestions), Patrick commented.
-- **btcopilot `dccdcad`**: Updated Source-of-Record docs to reflect the single-prompt extraction pivot.
-- **btcopilot `a3f2d16`**: Fixed PDP duplication on re-extraction. Added dashboard tasks T7-9/T7-10/T7-11 to track the remaining dedup/birth-event issues.
-- **familydiagram `406afa1`**: T7-12 frontend — ClusterModel tests for auto-detect.
-- **familydiagram `506dae9`**: T7-12 implementation — auto-detect event clusters on PDP accept.
-- **T7-4 (Build my Diagram button)**: Marked **failed** in active-tasks.json after 3 respawn attempts. But checking the MVP Dashboard, T7-4 is already listed as DONE. The worktree at `theapp-worktrees/feat-T7-4-build-diagram-button` has dirty state (modified `personalappcontroller.py`, `DiscussView.qml`, and test file). This needs cleanup.
+- **btcopilot `0fa8ac1`**: T7-12 auto-detect cluster tests (already noted yesterday)
+- **familydiagram `406afa1`, `506dae9`**: T7-12 frontend tests + implementation
+- **familydiagram CI run 22493336557**: Latest push to `feature/t7-12-auto-detect-clusters` — all green, "zoom non-clusters" commit message suggests a polish pass happened today
+
+No new commits to master in either repo. No new decisions logged. No agent tasks spawned. The swarm has been completely idle for 24+ hours.
 
 **PR Activity:**
 
-| Repo | PR | State | Age | Action Needed |
-|------|----|-------|-----|---------------|
-| btcopilot #32 | T7-12: Auto-detect cluster tests | OPEN, MERGEABLE | 12 hrs | Ready to merge |
-| familydiagram #86 | T7-12: Auto-detect clusters on PDP accept | OPEN, MERGEABLE | 12 hrs | Ready to merge |
-| familydiagram #74 | FD-310: Event halos for selected events | OPEN | 9 days | Relevant to T3-7 (timeline->diagram highlight). Review or close. |
-| familydiagram #72 | FD-307: Baseline View | OPEN | 50 days | Stale. Related to T2-5. Either merge or close with a note. |
-| btcopilot #16 | Synthetic client prompt improvement | DRAFT | 10 days | Draft for 10 days. Promote or close. |
-| btcopilot #10 | FD-300-proto: Synthetic user generator | OPEN | 81 days | Ancient. This was superseded by FD-300 (merged). Close it. |
+| Repo | PR | State | Age | CI | Notes |
+|------|----|-------|-----|----|-------|
+| btcopilot #32 | T7-12: Auto-detect cluster tests | OPEN | 1 day | N/A | Ready to merge |
+| familydiagram #86 | T7-12: Auto-detect clusters on PDP accept | OPEN, MERGEABLE | 1 day | Passing | Gemini reviewed (positive). Additional commit pushed today. |
+| familydiagram #74 | FD-310: Event halos | OPEN | 9 days | Passing | Related to T3-7. No review. |
+| familydiagram #72 | FD-307: Baseline View | OPEN | **50 days** | Unknown | Stale. T2-5 related (Goal 3, post-MVP). |
+| btcopilot #16 | Synthetic client prompts | DRAFT | 10 days | N/A | Still draft. |
+| btcopilot #10 | FD-300-proto | OPEN | **81 days** | N/A | Superseded by FD-300 (merged Dec 2025). Should be closed. |
+
+---
+
+**CRITICAL FINDING: T7-4 Is Not Actually Done**
+
+The MVP Dashboard lists T7-4 ("Build my diagram" button) as **Done**. It's not. I checked familydiagram master for any trace of the extract button:
+
+- `grep -r "extractFullDiscussion\|onExtract\|extractButton"` in `personalappcontroller.py` on master: **empty**
+- Same grep in `DiscussView.qml` on master: **empty**
+- `git log --oneline master | grep -i 'T7-4\|extract.*button\|build.*diagram'`: **empty**
+
+The code exists only in the stale worktree at `/Users/hurin/Projects/theapp-worktrees/feat-T7-4-build-diagram-button` with **196 lines of uncommitted changes** across 3 files:
+
+```
+personalappcontroller.py      |  42 ++++++++
+DiscussView.qml               |  30 ++++++
+test_discussview.py            | 125 +++++++++++++
+```
+
+The agent tried 3 times, failed, and left the code uncommitted. `active-tasks.json` shows `status: "failed"`, `respawnCount: 3`, `pr: null`. **The extract button — the central UX of the single-prompt extraction pivot — has never been committed, branched, PR'd, or merged.** The dashboard was incorrectly updated.
+
+This means the E2E flow described in decision 2026-02-24 ("User taps 'Build my diagram'") doesn't actually work in the shipped app. The btcopilot backend has `extract_full()` and the extract endpoint (T7-1, T7-2), but the Personal app has no button to call them.
+
+**This is the highest priority item today — higher than T7-12, higher than GT coding.** Without the extract button, there's no user-facing way to trigger extraction. Goals 1 and 2 are both blocked on this.
 
 ---
 
 **Today's Priorities**
 
-**1. Merge the T7-12 PRs (both repos) and clean up worktrees.**
+**1. Rescue T7-4 from the stale worktree.**
 
-Both PRs are MERGEABLE with reviews. T7-12 is the last code task before the project enters human-only territory (GT coding). Merge btcopilot #32 and familydiagram #86, then delete the worktrees.
+The uncommitted code in the T7-4 worktree needs to be reviewed, committed, PR'd, and merged. The 3 modified files (controller, QML view, test) total 196 lines — this is a small, focused change. Verify the code works against current master (there have been ~15 commits since the worktree was created), fix any conflicts, and ship it.
 
-The T7-4 worktree at `theapp-worktrees/feat-T7-4-build-diagram-button` is stale — the task is marked Done on the dashboard but the worktree has uncommitted changes and `active-tasks.json` shows it as failed. This should be cleaned up (check if those changes are already on master, then remove the worktree).
+**2. Merge the T7-12 PRs.**
 
-**2. GT Coding (T7-5) — the critical path.**
+Both PRs are MERGEABLE, CI passing, Gemini-reviewed. btcopilot #32 and familydiagram #86. Merge, delete branches, remove the `T7-12` worktree.
 
-Looking at the MVP Dashboard, the critical path to Goal 1 completion is:
+**3. GT Coding (T7-5).**
+
+Same story as yesterday. The critical path remains:
 
 ```
-T7-5 (Code GT) → T7-7 (Validate F1) → T7-8 (Prompt tune) → T7-9 (Validate idempotent re-extract)
+T7-4 (rescue!) → T7-5 (Code GT) → T7-7 (Validate F1) → T7-8 (Prompt tune)
 ```
 
-T7-5 is **human-only** and the **sole blocker** for everything downstream. 4 discussions are coded (36/37/39/48), target is 5-8. Each takes ~60 min. Even one more coded discussion (5 total) would unblock T7-7 and T7-8.
-
-**3. Fix the review-prs.sh label creation bug.**
-
-The `review.log` is completely jammed. Every 15 minutes since yesterday afternoon, it logs `Creating 'reviewed-by-claude' label...` twice (once per repo) and then... nothing else. The `reviewed-by-claude` label doesn't exist in either repo (I checked — `gh label list` returns no match for "review"). The `gh label create` command is likely failing silently (it has `|| true`), but the subsequent PR listing then finds open PRs without the label, tries to review them, and something is going wrong. **The automated PR review system has been non-functional for at least 12 hours**, running every 15 minutes and accomplishing nothing. This is wasting cron cycles and filling the log. The root cause is likely a GitHub permissions issue or a missing `gh auth` scope for label creation.
+4 discussions coded (36/37/39/48), target 5-8. Each takes ~60 min. This is human-only and has been the bottleneck since Feb 24.
 
 ---
 
 **Blockers & Risks**
 
-- **GT coding bottleneck**: Unchanged. Patrick is sole coder. 4/5-8 discussions coded. This has been the bottleneck since Feb 24 and will remain so until at least one more discussion is coded.
-- **Events F1 at 0.29** (target 0.4): Below target but can't improve until fresh GT is coded (T7-5) and prompt tuning begins (T7-8).
-- **PairBond F1 at 0.33** (target 0.5): Same situation — needs GT + tuning.
-- **T7-10 (birth event self-reference)**: Flagged as "needs design discussion first" in the dashboard. This is a semantic issue with how birth events assign person=child instead of person=parent. It could affect F1 measurement if not resolved before T7-7.
-- **PR #72 (Baseline View)**: 50 days old. Related to T2-5 (Goal 3). Not blocking MVP but accumulating merge debt.
+- **T7-4 not merged** (NEW, CRITICAL): The extract button doesn't exist in the shipped app. The entire single-prompt extraction UX is non-functional. The worktree code may have conflicts with 15+ commits that landed on master since it was created.
+- **GT coding bottleneck**: Unchanged since Feb 24. Patrick is sole coder. 4/5-8 discussions coded.
+- **Events F1 at 0.29** (target 0.4): Can't improve until GT (T7-5) + prompt tuning (T7-8).
+- **PairBond F1 at 0.33** (target 0.5): Same.
+- **T7-10 (birth event self-reference)**: Flagged as "needs design discussion first." Could affect F1 measurement.
+- **PR #72**: 50 days old, accumulating merge debt.
 
 ---
 
 **Agent System Health**
 
-- **Monitor**: Running every 10 minutes. Has been logging "No active tasks" continuously since the T7-4 task failed. The swarm is **completely idle** — no tmux sessions, no running agents.
-- **active-tasks.json**: Shows T7-4 as `status: "failed"` with `respawnCount: 3`. This task already succeeded (it's in the Done section of the dashboard), so the JSON is stale. It should be cleared.
-- **review-prs.sh**: **Broken**. The `reviewed-by-claude` label can't be created, causing the entire review loop to fail silently every 15 minutes. The review.log is accumulating ~190 identical lines per day. The script needs to be fixed or the label needs to be created manually via the GitHub web UI.
-- **Stale worktrees**: Two worktrees exist:
-  - `theapp-worktrees/T7-12` — appears to be the parent repo worktree (on master, clean). Can be removed after T7-12 PRs merge.
-  - `theapp-worktrees/feat-T7-4-build-diagram-button` — has uncommitted changes but T7-4 is done. Needs investigation: are those changes already on master? If so, remove. If not, salvage.
-- **No agent failures**: The `~/.openclaw/monitor/failures/` directory is empty. Good — the swarm infrastructure isn't error-prone, it's just idle.
+- **Monitor**: Running every 10 minutes. "No active tasks" logged continuously — **288 entries in the last 48 hours**. The swarm is idle.
+
+- **active-tasks.json**: Stale. Shows T7-4 as `failed` with `respawnCount: 3`, `pr: null`. Now we know why — the code never made it out of the worktree. This JSON should be cleared after T7-4 is rescued manually.
+
+- **review-prs.sh**: **Broken since Feb 26 03:45.** Two root causes found in the log:
+
+  1. **`gh: command not found`** (line 36) — cron doesn't have `gh` in its PATH. First error at 03:45:00.
+  2. **`cd: /Users/hurin/Projects/theapp/btcopilot: No such file or directory`** (line 35) — early runs had wrong repo paths (since fixed in the script, but the PATH issue persists).
+
+  The failure loop: `gh label list` fails (no `gh` in PATH) → stderr suppressed by `2>/dev/null` → `grep -qx` fails (no input) → enters label creation block → logs "Creating label" → `gh label create` also fails → `|| true` swallows it → `gh pr list` fails → `set -e` kills the script. Repeats every 15 minutes. **226 lines of "Creating label" in the log, zero PRs reviewed.** The `reviewed-by-claude` label doesn't exist in either repo because label creation also fails.
+
+  **Fix**: Add `export PATH="/opt/homebrew/bin:$PATH"` (or wherever `gh` lives) to the top of the script. Then manually create the labels or let the fixed script do it.
+
+- **Stale worktrees** (2):
+  - `feat-T7-4-build-diagram-button` — **contains unmerged T7-4 code**. Do NOT delete — rescue first.
+  - `T7-12` — clean, on master. Safe to remove after T7-12 PRs merge.
+
+- **No tmux sessions running.** No agent failures in `~/.openclaw/monitor/failures/`. The infrastructure is healthy but completely inactive.
 
 ---
 
 **One Uncomfortable Question**
 
-Patrick — the agent swarm infrastructure took real effort to build (ADR-0001, ADR-0004, the whole co-founder system, spawn-task.sh, review-prs.sh, check-agents.py). It's architecturally sound. But right now it's doing nothing. The monitor has logged "No active tasks" 144 times since yesterday. The review bot is broken and nobody noticed for 12+ hours. The T7-4 task failed 3 times and the stale JSON is still sitting there.
+Patrick — the dashboard said T7-4 was Done. It wasn't. The agent failed 3 times, left 196 lines of uncommitted code in a worktree, and the dashboard was updated anyway. Nobody noticed for at least a day. The review bot has been broken for 30+ hours, failing every 15 minutes, and nobody noticed that either.
 
-Meanwhile, the **actual bottleneck** is you sitting down with the SARF editor and coding ground truth for a fresh discussion. That's 60 minutes of human work that unblocks every downstream task.
+This isn't an infrastructure problem — the monitoring, the dashboard, the review bot are all there. The problem is **nobody is watching the watchers**. The monitor logs "No active tasks" 288 times and nobody reads it. The review log fills with 226 identical error lines and nobody reads it. The dashboard says Done and nobody verifies it.
 
-**Are you building agent infrastructure to avoid doing the GT coding?** The swarm can't code ground truth. The co-founder system can't code ground truth. The review bot can't code ground truth. The one thing that moves the needle on MVP right now is you opening the SARF editor and coding discussion #49 or #50. Everything else — merging T7-12, fixing the review bot, cleaning up worktrees — takes 30 minutes total. The GT coding takes 60 minutes and has been the bottleneck for 3 days.
-
-What's stopping you from blocking out 2 hours today and coding 2 discussions?
+**What's your verification process?** When the dashboard says a task is Done, do you test the actual app? When the agent says it shipped, do you check that the code is on master? You built a sophisticated system (ADR-0001, spawn-task.sh, check-agents.py) but the feedback loop from "agent says done" to "human confirms done" doesn't exist yet. The T7-4 gap could have been caught with a 30-second `grep` on master. What would it take to add a verification step — even just a `git log master | grep T7-X` — before marking tasks Done on the dashboard?
 
 ---
 
-```json
+```proposed-actions
 {
   "actions": [
     {
-      "id": "pulse-2026-02-27-1",
-      "title": "Fix review-prs.sh label creation failure",
-      "tier": "auto",
-      "category": "infrastructure",
-      "effort": "trivial",
-      "confidence": 0.9,
-      "repo": "infra",
-      "plan": "1. Create the 'reviewed-by-claude' label in both repos via gh label create\n2. If permissions block gh label create, create via GitHub web UI\n3. Verify review-prs.sh completes a full cycle\n4. Check review.log shows actual review activity",
-      "spawn_prompt": "Fix the broken review-prs.sh automated PR review system.\n\nProblem: The 'reviewed-by-claude' label doesn't exist in either btcopilot or familydiagram repos, causing review-prs.sh to loop on label creation every 15 minutes without ever reviewing PRs.\n\nSteps:\n1. cd /Users/hurin/.openclaw/workspace-hurin/theapp/btcopilot && gh label create 'reviewed-by-claude' --description 'PR has been reviewed by Claude' --color '7057ff'\n2. cd /Users/hurin/.openclaw/workspace-hurin/theapp/familydiagram && gh label create 'reviewed-by-claude' --description 'PR has been reviewed by Claude' --color '7057ff'\n3. If label creation fails due to permissions, report the error message.\n4. Run review-prs.sh --dry to verify it now correctly lists PRs for review.\n\nSuccess: review.log shows 'No open PRs' or 'Reviewing PR #X' instead of repeated 'Creating label' messages.",
-      "success_metric": "review.log shows actual PR review activity or 'No open PRs' instead of repeated label creation attempts"
-    },
-    {
-      "id": "pulse-2026-02-27-2",
-      "title": "Clear stale active-tasks.json and T7-4 worktree",
-      "tier": "auto",
+      "id": "project-pulse-2026-02-27-1",
+      "title": "Fix review-prs.sh PATH issue for cron",
       "category": "infrastructure",
       "effort": "trivial",
       "confidence": 0.95,
-      "repo": "infra",
-      "plan": "1. Verify T7-4 changes are already on master by checking familydiagram master for the extract button implementation\n2. If changes are on master, remove the worktree: git worktree remove theapp-worktrees/feat-T7-4-build-diagram-button --force\n3. Clear active-tasks.json to empty tasks array\n4. After T7-12 PRs merge, also remove theapp-worktrees/T7-12",
-      "spawn_prompt": "Clean up stale agent artifacts.\n\n1. Check if T7-4 changes are already merged:\n   cd /Users/hurin/.openclaw/workspace-hurin/theapp/familydiagram\n   git log --oneline master | grep -i 'T7-4\\|extract\\|build.*diagram'\n   Check if personalappcontroller.py on master has extractFullDiscussion or similar.\n\n2. If T7-4 is on master, remove the stale worktree:\n   cd /Users/hurin/Projects/theapp-worktrees\n   rm -rf feat-T7-4-build-diagram-button\n\n3. Update active-tasks.json:\n   Write to /Users/hurin/.openclaw/workspace-hurin/theapp/.clawdbot/active-tasks.json:\n   {\"tasks\": []}\n\n4. Report what was cleaned up.\n\nSuccess: active-tasks.json shows empty tasks, stale worktree removed.",
-      "success_metric": "active-tasks.json has empty tasks array, feat-T7-4-build-diagram-button worktree removed"
+      "repo": "none",
+      "plan": "1. Find gh binary path (which gh)\n2. Add PATH export to top of review-prs.sh\n3. Create reviewed-by-claude label in both repos\n4. Run review-prs.sh --dry to verify it works\n5. Truncate the review.log to remove 226 lines of noise",
+      "spawn_prompt": "Fix the broken review-prs.sh automated PR review system.\n\nProblem: The cron environment doesn't have `gh` in PATH, causing review-prs.sh to fail silently every 15 minutes since Feb 26.\n\nSteps:\n1. Run: which gh\n2. Edit /Users/hurin/.openclaw/monitor/review-prs.sh — add after line 1 (after #!/bin/bash):\n   export PATH=\"/opt/homebrew/bin:$PATH\"\n   (Use the actual path from step 1)\n3. Create labels:\n   cd /Users/hurin/.openclaw/workspace-hurin/theapp/btcopilot && gh label create 'reviewed-by-claude' --description 'PR has been reviewed by Claude' --color '7057ff'\n   cd /Users/hurin/.openclaw/workspace-hurin/theapp/familydiagram && gh label create 'reviewed-by-claude' --description 'PR has been reviewed by Claude' --color '7057ff'\n4. Truncate the noisy log: > /Users/hurin/.openclaw/monitor/review.log\n5. Run: bash /Users/hurin/.openclaw/monitor/review-prs.sh --dry\n6. Verify output shows PR listing (not just 'Creating label')\n\nSuccess criteria: review-prs.sh --dry lists open PRs or says 'No open PRs' for each repo. No 'gh: command not found' errors.",
+      "success_metric": "review-prs.sh --dry completes full cycle, listing PRs or saying 'No open PRs'"
     },
     {
-      "id": "pulse-2026-02-27-3",
-      "title": "Close ancient PR btcopilot#10 (FD-300-proto)",
-      "tier": "auto",
+      "id": "project-pulse-2026-02-27-2",
+      "title": "Close superseded btcopilot PR #10",
       "category": "velocity",
       "effort": "trivial",
       "confidence": 0.95,
       "repo": "btcopilot",
-      "plan": "1. Close btcopilot PR #10 with a comment explaining it was superseded by FD-300 (PR #11, merged Dec 2025)\n2. Delete the branch if possible",
+      "plan": "1. Close PR #10 with comment that it was superseded by FD-300 (PR #11, merged Dec 2025)\n2. Delete remote branch if possible",
       "spawn_prompt": "Close the stale PR #10 in btcopilot repo.\n\ncd /Users/hurin/.openclaw/workspace-hurin/theapp/btcopilot\ngh pr close 10 --comment 'Closing: superseded by FD-300 (PR #11, merged Dec 2025). The synthetic user generator was fully implemented in that PR.'\ngh pr view 10 --json headRefName --jq '.headRefName' | xargs -I {} git push origin --delete {} 2>/dev/null || echo 'Branch already deleted or protected'\n\nSuccess: PR #10 shows as closed.",
       "success_metric": "btcopilot PR #10 is closed"
     },
     {
-      "id": "pulse-2026-02-27-4",
-      "title": "Merge T7-12 PRs in both repos",
-      "tier": "propose",
-      "category": "velocity",
+      "id": "project-pulse-2026-02-27-3",
+      "title": "Rescue T7-4 extract button from stale worktree",
+      "category": "bugfix",
       "effort": "small",
-      "confidence": 0.85,
-      "repo": "btcopilot",
-      "plan": "1. Review T7-12 changes one final time in both repos\n2. Merge btcopilot PR #32\n3. Merge familydiagram PR #86\n4. Remove T7-12 worktree\n5. Update MVP Dashboard to mark T7-12 as done",
-      "spawn_prompt": "Merge the T7-12 auto-detect clusters PRs and update the dashboard.\n\n1. cd /Users/hurin/.openclaw/workspace-hurin/theapp/btcopilot && gh pr merge 32 --merge --delete-branch\n2. cd /Users/hurin/.openclaw/workspace-hurin/theapp/familydiagram && gh pr merge 86 --merge --delete-branch\n3. cd /Users/hurin/Projects/theapp-worktrees && rm -rf T7-12\n4. In btcopilot/MVP_DASHBOARD.md, move T7-12 from Open Tasks to the Done line under Goal 1.\n5. git add MVP_DASHBOARD.md && git commit -m 'Mark T7-12 done on MVP Dashboard'\n\nSuccess: Both PRs merged, worktree cleaned, dashboard updated.",
-      "success_metric": "Both T7-12 PRs merged, worktree removed, dashboard updated"
-    },
-    {
-      "id": "pulse-2026-02-27-5",
-      "title": "Triage stale familydiagram PRs #72 and #74",
-      "tier": "propose",
-      "category": "velocity",
-      "effort": "small",
-      "confidence": 0.7,
+      "confidence": 0.75,
       "repo": "familydiagram",
-      "plan": "1. PR #72 (Baseline View, 50 days old): relates to T2-5 (Goal 3, post-MVP). Either close with 'deferred to post-MVP' or merge if it's safe.\n2. PR #74 (Event Halos, 9 days old): relates to T3-7 (Goal 2 - timeline highlight). Review for merge if it's complete, or mark as in-progress.\n3. PR #16 (Synthetic client prompts, DRAFT, 10 days): promote to ready or close.",
-      "spawn_prompt": "Triage stale familydiagram PRs.\n\nFor each PR, read the diff and assess whether it should be merged, closed, or left open with a note.\n\n1. cd /Users/hurin/.openclaw/workspace-hurin/theapp/familydiagram\n2. gh pr view 72 (Baseline View - 50 days old, Goal 3 post-MVP)\n3. gh pr view 74 (Event Halos - 9 days old, may relate to T3-7)\n4. cd /Users/hurin/.openclaw/workspace-hurin/theapp/btcopilot\n5. gh pr view 16 (Synthetic client prompts - DRAFT 10 days)\n\nFor each: read the diff (gh pr diff N), check if tests pass, check for merge conflicts.\nReport findings with a recommendation (merge/close/keep) for each.\n\nDo NOT merge or close anything — just report recommendations.\n\nSuccess: Clear recommendation for each of the 3 PRs with evidence.",
-      "success_metric": "Clear merge/close/keep recommendation for PRs 72, 74, and btcopilot#16"
+      "plan": "1. Review the 196 lines of uncommitted changes in the T7-4 worktree\n2. Check for conflicts with current master (15+ commits since worktree created)\n3. Create a branch, commit the changes, push, open PR\n4. If conflicts exist, resolve them\n5. Update active-tasks.json to clear the stale T7-4 entry\n6. Do NOT update dashboard until PR is merged and verified",
+      "spawn_prompt": "Rescue the T7-4 extract button code from the stale worktree and get it into a PR.\n\nContext: T7-4 adds the 'Build my diagram' extract button to the Personal app. An agent attempted this 3 times and failed, leaving 196 lines of uncommitted code in a worktree. The code is NOT on master. The dashboard incorrectly says T7-4 is Done.\n\nFiles with changes (in the worktree):\n- pkdiagram/personal/personalappcontroller.py (+42 lines)\n- pkdiagram/resources/qml/Personal/DiscussView.qml (+30 lines)\n- pkdiagram/tests/personal/test_discussview.py (+125 lines)\n\nSteps:\n1. cd /Users/hurin/Projects/theapp-worktrees/feat-T7-4-build-diagram-button\n2. Read all 3 modified files (git diff) to understand the changes\n3. Check if the changes apply cleanly to current familydiagram master:\n   cd /Users/hurin/.openclaw/workspace-hurin/theapp/familydiagram\n   git checkout -b feat/T7-4-rescue master\n   git diff --no-index /dev/null /dev/null  # just to verify we're on the right branch\n4. Apply the changes from the worktree to the new branch. Read each file from the worktree and compare with master to manually apply.\n5. Run tests: uv run pytest pkdiagram/tests/personal/test_discussview.py -x -v\n6. If tests pass, commit and push:\n   git add pkdiagram/personal/personalappcontroller.py pkdiagram/resources/qml/Personal/DiscussView.qml pkdiagram/tests/personal/test_discussview.py\n   git commit -m 'T7-4: Add Build my diagram extract button to Personal app'\n   git push -u origin feat/T7-4-rescue\n   gh pr create --title 'T7-4: Add extract button to Personal app DiscussView' --body 'Rescues T7-4 implementation from stale worktree. Adds extract button to trigger single-prompt full-conversation extraction.'\n7. Update active-tasks.json: write {\"tasks\": []} to /Users/hurin/.openclaw/workspace-hurin/theapp/.clawdbot/active-tasks.json\n\nIMPORTANT: The extract button should call the backend POST /extract endpoint (T7-2, already on btcopilot master). Check btcopilot/personal/routes/discussions.py for the endpoint signature. The controller method should POST to /api/personal/discussions/<id>/extract.\n\nSuccess criteria: PR opened with extract button implementation, tests passing, active-tasks.json cleared.",
+      "success_metric": "PR opened for T7-4 with passing tests; extract button visible in DiscussView.qml"
     }
   ]
 }
