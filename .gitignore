@@ -18,6 +18,8 @@ update-check.json
 agents/*/sessions/
 **/sessions/*.jsonl
 *.jsonl
+discord/
+subagents/
 
 # === Monitor runtime (ephemeral) ===
 monitor/monitor.log
