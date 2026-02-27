@@ -12,8 +12,8 @@
 set -euo pipefail
 
 REPOS=(
-    "$HOME/Projects/theapp/btcopilot"
-    "$HOME/Projects/theapp/familydiagram"
+    "$HOME/.openclaw/workspace-hurin/theapp/btcopilot"
+    "$HOME/.openclaw/workspace-hurin/theapp/familydiagram"
 )
 LABEL="reviewed-by-claude"
 DRY_RUN=false

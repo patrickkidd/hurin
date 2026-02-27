@@ -21,10 +21,10 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
-REGISTRY     = Path.home() / "Projects/theapp/.clawdbot/active-tasks.json"
+REGISTRY     = Path.home() / ".openclaw/workspace-hurin/theapp/.clawdbot/active-tasks.json"
 LOG          = Path.home() / ".openclaw/monitor/monitor.log"
 FAILURES_DIR = Path.home() / ".openclaw/monitor/failures"
-DEV_REPO     = Path.home() / "Projects/theapp"
+DEV_REPO     = Path.home() / ".openclaw/workspace-hurin/theapp"
 MAX_RESPAWNS = 3
 
 
