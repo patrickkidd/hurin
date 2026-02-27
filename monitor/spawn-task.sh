@@ -51,9 +51,9 @@ done
 }
 
 BRANCH="${BRANCH:-feat/$TASK_ID}"
-DEV_REPO="$HOME/Projects/theapp"
+DEV_REPO="$HOME/.openclaw/workspace-hurin/theapp"
 REPO_DIR="$DEV_REPO/$TARGET_REPO"
-WORKTREE="$HOME/Projects/theapp-worktrees/$TASK_ID"
+WORKTREE="$HOME/.openclaw/workspace-hurin/theapp-worktrees/$TASK_ID"
 SESSION="claude-$TASK_ID"
 REGISTRY="$DEV_REPO/.clawdbot/active-tasks.json"
 

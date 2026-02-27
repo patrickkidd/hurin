@@ -23,21 +23,32 @@ A 2-tier agent architecture running on the Mac Mini via OpenClaw:
 
 ```
 Patrick (Discord)
-  └── hurin (Sonnet 4.6) — orchestrator, holds project/business context
-        ├── claude --model claude-opus-4-6  (coding agent in worktree)
-        ├── claude --model claude-opus-4-6  (coding agent in worktree)
-        └── ...  (3-4 concurrent max)
+  ├── hurin (Haiku 4.5) — dumb router, no intelligence
+  │     └── exec: claude -p --model opus  ($0, Max plan CLI)
+  │           ├── Mode 1: sync (blocks, reply in Discord)
+  │           └── Mode 2: background (spawn-task.sh, PR expected)
+  │
+  └── Co-Founder System (cron, no hurin)
+        └── co-founder.sh <lens> → claude -p  ($0, Max plan CLI)
+              ├── 9 strategic lenses on rotating schedule
+              ├── Journal memory (last 150 lines fed back each run)
+              └── Posts to #co-founder Discord channel
 ```
+
+> **Important:** hurin is a dumb pipe, not an orchestrator. It does not read files, reason about code, or make decisions. All intelligence is delegated to CC via `exec` + `claude -p`. See [ADR-0003](ADR-0003-hurin-lockdown-validation.md) for the lockdown rationale and validation.
 
 ### Context Isolation Model
 
-| | hurin (orchestrator) | Claude Code (coding agents) |
+| | hurin (router) | Claude Code (brain) |
 |---|---|---|
-| **Reads** | MVP_DASHBOARD.md, decisions/log.md, GitHub issues/project board | CLAUDE.md files (root + per-package), code, tests, as-builts |
-| **Decides** | What to build, why, task priority | How to implement, which patterns, which files |
-| **Writes** | Task-scoped prompts, status updates | Code, tests, PRs |
+| **Model** | Haiku 4.5 (API, ~$0.01-0.03/msg) | Opus 4.6 (Max plan CLI, $0) |
+| **Thinking** | Off | N/A (CC manages its own) |
+| **Tools** | `exec` only (+ session read-only) | Full codebase access |
+| **Reads** | Nothing — routes to CC | CLAUDE.md files, code, tests, project state |
+| **Decides** | Nothing — routes to CC | Everything: plans, priorities, implementation |
+| **Writes** | Nothing — relays CC output | Code, tests, PRs |
 
-hurin writes prompts describing the **what** and **why**. The coding agent reads the repo's CLAUDE.md system and figures out the **how**.
+hurin receives Patrick's message and passes it verbatim to CC via `exec` + `claude -p`. CC does all the work. hurin relays CC's response verbatim.
 
 ### Worktree Strategy
 
@@ -70,6 +81,12 @@ Capacity: 3-4 concurrent worktrees easily fit on 16GB.
     monitor.log                # check-agents.py run log
     review.log                 # review-prs.sh run log
     cron.log                   # cron stdout/stderr
+  co-founder/                   # Co-founder strategic briefing system (ADR-0004)
+    config.sh                  # Paths, channel ID, settings
+    co-founder.sh              # Main runner (lens → CC → journal → Discord)
+    discord-post.sh            # Discord API posting with message splitting
+    journal.md                 # Persistent memory (append-only, 1000 line cap)
+    lenses/                    # 9 strategic lens prompts
   archive/                     # Archived beren/tuor configs
     workspace-beren/
     workspace-tuor/
@@ -82,19 +99,17 @@ Capacity: 3-4 concurrent worktrees easily fit on 16GB.
 ### Project Files
 
 ```
-~/Projects/theapp/
-  .clawdbot/                  # Gitignored. Agent task tracking.
-    active-tasks.json          # Registry of active Claude Code sessions
+~/.openclaw/workspace-hurin/theapp/    # Monorepo (moved from ~/Projects/theapp)
+  .clawdbot/                           # Gitignored. Agent task tracking.
+    active-tasks.json                   # Registry of active Claude Code sessions
   .github/
-    PULL_REQUEST_TEMPLATE.md   # Summary, screenshots, testing, checklist
-  adrs/
-    ADR-0001-agent-swarm.md    # This file
-    ADR-0001-status.md         # Gap analysis tracker
-    archive/
-      ADR-0001-agent-swarm_2026-02-25_3tier.md  # Previous 3-tier version
+    PULL_REQUEST_TEMPLATE.md            # Summary, screenshots, testing, checklist
 
-~/Projects/theapp-worktrees/   # Git worktrees for active tasks
-  {task-id}/                   # One per active Claude Code job
+~/.openclaw/adrs/                      # ADRs (this repo)
+  ADR-0001-agent-swarm.md              # This file (as-built)
+  ADR-0001-status.md                   # Gap analysis tracker
+  ADR-0003-hurin-lockdown-validation.md # Lockdown rationale + cost experiments
+  ADR-0004-co-founder-system.md        # Co-founder strategic briefing system
 ```
 
 ## Discord Setup
@@ -108,6 +123,8 @@ Capacity: 3-4 concurrent worktrees easily fit on 16GB.
 |---------|-----|-----|
 | #planning | 1475607956698562690 | hurin |
 | #reviews | 1475608130040762482 | hurin |
+| #claude | 1476629409980219533 | hurin |
+| #co-founder | 1476739270663213197 | hurin (replies only; posts via direct API) |
 
 beren/tuor Discord accounts archived. #beren-work and #tuor-work channels no longer bound.
 
@@ -118,21 +135,24 @@ Tuned for 16GB RAM:
 ```json
 "maxConcurrent": 2,
 "subagents": { "maxConcurrent": 4 },
-"contextTokens": 64000
+"contextTokens": 64000,
+"thinkingDefault": "off"
 ```
 
 - `maxConcurrent: 2` — prevents swap thrashing
-- `contextTokens: 64000` — sufficient for orchestrator context
+- `contextTokens: 64000` — sufficient for router context
+- `thinkingDefault: "off"` — hurin doesn't need reasoning, saves ~50% on output tokens
 - `sandbox: { "mode": "off" }` — local trusted machine
 - Agent-to-agent comms enabled (hurin only)
-- hurin has `sessions_spawn` for potential future use
+- **hurin tools restricted to:** `exec`, `sessions_list`, `sessions_history`, `session_status`
+- `read`, `write`, `edit` removed — see [ADR-0003](ADR-0003-hurin-lockdown-validation.md)
 
 ## Workflow: Patrick → Code → PR
 
-1. Patrick posts a task in #planning (or hurin picks up from GitHub issues)
-2. hurin reads project context (MVP dashboard, decision log, issue details)
-3. hurin crafts a task-scoped prompt — what to build, why, done condition
-4. hurin runs `spawn-task.sh --task {id} --description "..."` with prompt on stdin
+1. Patrick posts a task in #planning
+2. hurin routes message to CC via `exec` + `claude -p` (Mode 1: sync)
+3. CC reads project context, proposes plan, relays via hurin
+4. On Patrick's approval, hurin runs `spawn-task.sh --task {id} --description "..."` with prompt on stdin (Mode 2: background)
 5. `spawn-task.sh` creates worktree, symlinks .venv, spawns Claude Code in tmux, registers task
 6. Claude Code reads the repo's CLAUDE.md files, implements, creates PR
 7. `check-agents.py` (every 10 min) monitors: tmux alive? PR created? CI? Review status?
@@ -145,9 +165,9 @@ Tuned for 16GB RAM:
 When `check-agents.py` detects a dead session with no PR:
 1. Captures last 100 lines of tmux output to `~/.openclaw/monitor/failures/{task}.log`
 2. Pings hurin with failure log path + context
-3. hurin reads the failure, consults `memory/prompt-patterns.md`
-4. hurin rewrites the prompt addressing the failure mode
-5. hurin respawns via `spawn-task.sh` (max 3 attempts)
+3. hurin delegates diagnosis to CC via `exec` + `claude -p` (Mode 1)
+4. CC reads the failure log, diagnoses root cause, writes corrected prompt
+5. hurin takes CC's corrected prompt and respawns via `spawn-task.sh` (max 3 attempts)
 6. hurin logs the failure+fix pattern to `memory/prompt-patterns.md`
 
 ### Automated Code Review
@@ -169,6 +189,7 @@ Two complementary cron scripts:
 |--------|-----------|---------|
 | `check-agents.py` | Every 10 min | Task health: tmux alive, PR status, CI, reviews. Pings hurin on failures. |
 | `review-prs.sh` | Every 15 min | Automated code review on new PRs. |
+| `co-founder.sh` | 9 schedules | Strategic briefings via rotating lenses. See [ADR-0004](ADR-0004-co-founder-system.md). |
 
 hurin is event-driven (not polling). Only wakes up when pinged by `check-agents.py`.
 
@@ -200,24 +221,25 @@ tasks.sh -l                  # List only
 ### Cleaning up
 
 Worktrees for "done" tasks are automatically cleaned up by `check-agents.py`.
-Manual cleanup: `cd ~/Projects/theapp && git worktree remove ~/Projects/theapp-worktrees/{task}`
+Manual cleanup: `cd ~/.openclaw/workspace-hurin/theapp && git worktree remove ~/.openclaw/workspace-hurin/theapp-worktrees/{task}`
 
 ## Consequences
 
 ### Positive
 
-- Simpler architecture: one orchestrator, direct to coding agents
-- No Haiku intelligence bottleneck at the prompting layer
+- Simpler architecture: dumb router + one brain
+- All intelligence at $0 via Max plan CLI — hurin API cost is ~$0.01-0.03/msg
+- Structural enforcement: hurin literally cannot read/write/edit files (tools removed)
+- Thinking disabled: no wasted output tokens on router reasoning
 - Ralph Loop: systematic failure recovery with prompt improvement
 - Automated code reviews catch issues before Patrick sees the PR
-- Context isolation: orchestrator holds business context, coding agents hold code context via CLAUDE.md
 - Fewer moving parts to break, configure, and maintain
 
 ### Negative
 
-- Less parallelism in prompt crafting (hurin is serial vs beren+tuor parallel)
-- hurin must context-switch between backend and frontend tasks
-- Worktrees accumulate if cleanup fails
+- hurin cannot self-correct if CC call fails (e.g. wrong path) — limited to `exec` only
+- hurin cannot read its own workspace files — relies on system prompt context
+- Session context growth increases per-message cost (mitigated by 15-min idle reset)
 
 ### Risks
 
@@ -225,3 +247,8 @@ Manual cleanup: `cd ~/Projects/theapp && git worktree remove ~/Projects/theapp-w
 - `--dangerously-skip-permissions` on Claude Code subprocesses — appropriate for trusted local machine
 - `review-prs.sh` uses `claude -p` which costs API tokens per review
 - The monitoring scripts use `gh` CLI — requires `gh auth login` to be done first
+
+## Related
+
+- [ADR-0003: Hurin Lockdown & Validation](ADR-0003-hurin-lockdown-validation.md) — tool restrictions, thinking-off, and cost validation experiments
+- [ADR-0004: Co-Founder System](ADR-0004-co-founder-system.md) — scheduled strategic briefings via rotating lenses
