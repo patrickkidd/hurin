@@ -10,7 +10,7 @@
       "plan": "1. Remove the stale feat-T7-4-build-diagram-button worktree\n2. Clear T7-4 from active-tasks.json\n3. Delete the local feat/T7-4-build-diagram-button branch if it exists",
       "spawn_prompt": "Clean up the stale T7-4 agent task artifacts.\n\nThe T7-4 task failed after 3 respawns but was manually completed. Clean up:\n\n1. Remove the worktree:\n   cd /Users/hurin/.openclaw/workspace-hurin/theapp\n   git worktree remove /Users/hurin/Projects/theapp-worktrees/feat-T7-4-build-diagram-button --force\n\n2. Delete the local branch:\n   git branch -D feat/T7-4-build-diagram-button 2>/dev/null || echo 'Branch not found'\n\n3. Update active-tasks.json to empty:\n   Write '{\"tasks\": []}' to /Users/hurin/.openclaw/workspace-hurin/theapp/.clawdbot/active-tasks.json\n\nSuccess criteria: worktree directory removed, active-tasks.json has empty tasks array, no feat/T7-4 branch locally.",
       "success_metric": "feat-T7-4-build-diagram-button worktree removed, active-tasks.json shows empty tasks array",
-      "issue_url": "(issue creation failed)",
+      "issue_url": "https://github.com/patrickkidd/theapp/issues/9",
       "status": "pending_approval"
     },
     {
@@ -23,7 +23,7 @@
       "plan": "1. Read review-prs.sh at /Users/hurin/.openclaw/monitor/review-prs.sh\n2. Find the label creation logic\n3. Add a check: if label already exists, skip creation (gh label list --search 'reviewed-by-claude' or use gh api to check)\n4. Ensure the script doesn't spam the log with repeated label creation attempts",
       "spawn_prompt": "Fix the review-prs.sh script that's stuck in a label creation loop.\n\nFile: /Users/hurin/.openclaw/monitor/review-prs.sh\n\nProblem: The review log at /Users/hurin/.openclaw/monitor/review.log shows '[btcopilot] Creating reviewed-by-claude label...' repeated twice every 15 minutes, continuously. The script tries to create a GitHub label every run and either fails or doesn't detect it already exists.\n\nFix: Read the script, find where it creates the 'reviewed-by-claude' label, and add idempotent logic — check if the label exists before trying to create it. Use 'gh label list --search reviewed-by-claude' or 'gh api repos/{owner}/{repo}/labels/reviewed-by-claude' to check existence first. If label exists, skip creation silently.\n\nAlso check if there's a broader issue — the script may be failing before it gets to actual PR review, which would explain why it only logs label creation and nothing else.\n\nSuccess criteria: Running the script no longer produces 'Creating reviewed-by-claude label...' when the label already exists. Review log shows actual PR review activity or 'No open PRs' instead of repeated label creation attempts.",
       "success_metric": "review.log stops showing repeated 'Creating reviewed-by-claude label...' entries every 15 minutes",
-      "issue_url": "(issue creation failed)",
+      "issue_url": "https://github.com/patrickkidd/theapp/issues/10",
       "status": "pending_approval"
     }
   ]
