@@ -11,7 +11,8 @@
       "spawn_prompt": "Clean up the stale T7-4 agent task artifacts.\n\nThe T7-4 task failed after 3 respawns but was manually completed. Clean up:\n\n1. Remove the worktree:\n   cd /Users/hurin/.openclaw/workspace-hurin/theapp\n   git worktree remove /Users/hurin/Projects/theapp-worktrees/feat-T7-4-build-diagram-button --force\n\n2. Delete the local branch:\n   git branch -D feat/T7-4-build-diagram-button 2>/dev/null || echo 'Branch not found'\n\n3. Update active-tasks.json to empty:\n   Write '{\"tasks\": []}' to /Users/hurin/.openclaw/workspace-hurin/theapp/.clawdbot/active-tasks.json\n\nSuccess criteria: worktree directory removed, active-tasks.json has empty tasks array, no feat/T7-4 branch locally.",
       "success_metric": "feat-T7-4-build-diagram-button worktree removed, active-tasks.json shows empty tasks array",
       "issue_url": "https://github.com/patrickkidd/theapp/issues/9",
-      "status": "pending_approval"
+      "status": "approved",
+      "approved_at": "2026-02-28T12:16:40Z"
     },
     {
       "id": "project-pulse-2026-02-27-2",
