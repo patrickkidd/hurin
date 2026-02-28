@@ -2,42 +2,25 @@
   "actions": [
     {
       "id": "project-pulse-2026-02-27-1",
-      "title": "Fix review-prs.sh PATH and label creation",
+      "title": "Clean up stale T7-4 worktree and task registry",
       "category": "infrastructure",
       "effort": "trivial",
       "confidence": 0.95,
       "repo": "none",
-      "plan": "1. Add PATH export for /opt/homebrew/bin at top of review-prs.sh\n2. Create 'reviewed-by-claude' label in both repos via gh\n3. Verify the script completes a full cycle\n4. Truncate the spammy review.log",
-      "spawn_prompt": "Fix the broken review-prs.sh automated PR review system at /Users/hurin/.openclaw/monitor/review-prs.sh.\n\nRoot cause: cron doesn't have /opt/homebrew/bin in PATH, so `gh` and `claude` commands fail.\n\nSteps:\n1. Edit /Users/hurin/.openclaw/monitor/review-prs.sh — add this line after `set -euo pipefail`:\n   export PATH=\"/opt/homebrew/bin:$PATH\"\n\n2. Create the label in both repos:\n   cd /Users/hurin/.openclaw/workspace-hurin/theapp/btcopilot && gh label create 'reviewed-by-claude' --description 'PR has been reviewed by Claude' --color '7057ff'\n   cd /Users/hurin/.openclaw/workspace-hurin/theapp/familydiagram && gh label create 'reviewed-by-claude' --description 'PR has been reviewed by Claude' --color '7057ff'\n\n3. Truncate the spammy log: > /Users/hurin/.openclaw/monitor/review.log\n\n4. Do a dry run to verify the script works: bash /Users/hurin/.openclaw/monitor/review-prs.sh --dry\n\n5. Check that the dry run log shows 'Would review PR #X' or 'No open PRs' instead of 'Creating label'.\n\nAlso verify that `which claude` works from the script's PATH context — the review step calls `claude -p` which also needs to be in PATH.\n\nSuccess criteria: review-prs.sh --dry completes without errors and logs actual PR review activity for both repos.",
-      "success_metric": "review-prs.sh --dry completes and logs PR review status for both btcopilot and familydiagram repos",
-      "issue_url": "https://github.com/patrickkidd/theapp/issues/3",
-      "status": "pending_approval"
+      "plan": "1. Remove the stale feat-T7-4-build-diagram-button worktree\n2. Clear T7-4 from active-tasks.json\n3. Delete the local feat/T7-4-build-diagram-button branch if it exists",
+      "spawn_prompt": "Clean up the stale T7-4 agent task artifacts.\n\nThe T7-4 task failed after 3 respawns but was manually completed. Clean up:\n\n1. Remove the worktree:\n   cd /Users/hurin/.openclaw/workspace-hurin/theapp\n   git worktree remove /Users/hurin/Projects/theapp-worktrees/feat-T7-4-build-diagram-button --force\n\n2. Delete the local branch:\n   git branch -D feat/T7-4-build-diagram-button 2>/dev/null || echo 'Branch not found'\n\n3. Update active-tasks.json to empty:\n   Write '{\"tasks\": []}' to /Users/hurin/.openclaw/workspace-hurin/theapp/.clawdbot/active-tasks.json\n\nSuccess criteria: worktree directory removed, active-tasks.json has empty tasks array, no feat/T7-4 branch locally.",
+      "success_metric": "feat-T7-4-build-diagram-button worktree removed, active-tasks.json shows empty tasks array"
     },
     {
       "id": "project-pulse-2026-02-27-2",
-      "title": "Clear stale active-tasks.json",
+      "title": "Fix review-prs.sh label creation loop",
       "category": "infrastructure",
       "effort": "trivial",
-      "confidence": 0.95,
+      "confidence": 0.85,
       "repo": "none",
-      "plan": "1. Write empty tasks array to active-tasks.json\n2. This does NOT remove the T7-4 worktree (Patrick needs to review those changes first)",
-      "spawn_prompt": "Clear the stale active-tasks.json that still shows a failed T7-4 task.\n\nWrite this content to /Users/hurin/.openclaw/workspace-hurin/theapp/.clawdbot/active-tasks.json:\n{\"tasks\": []}\n\nDo NOT remove any worktrees — the T7-4 worktree has uncommitted changes that need human review.\n\nSuccess criteria: active-tasks.json contains empty tasks array.",
-      "success_metric": "active-tasks.json has {\"tasks\": []}",
-      "issue_url": "https://github.com/patrickkidd/theapp/issues/4",
-      "status": "pending_approval"
-    },
-    {
-      "id": "project-pulse-2026-02-27-3",
-      "title": "Close ancient PR btcopilot#10",
-      "category": "velocity",
-      "effort": "trivial",
-      "confidence": 0.95,
-      "repo": "btcopilot",
-      "plan": "1. Close btcopilot PR #10 with comment explaining it was superseded by FD-300 (PR #11, merged Dec 2025)\n2. Delete the branch if possible",
-      "spawn_prompt": "Close the stale PR #10 in btcopilot repo.\n\ncd /Users/hurin/.openclaw/workspace-hurin/theapp/btcopilot\ngh pr close 10 --comment 'Closing: superseded by FD-300 (PR #11, merged Dec 2025). The synthetic user generator was fully implemented in that PR.'\ngh pr view 10 --json headRefName --jq '.headRefName' | xargs -I {} git push origin --delete {} 2>/dev/null || echo 'Branch already deleted or protected'\n\nSuccess criteria: PR #10 shows as closed.",
-      "success_metric": "btcopilot PR #10 is closed",
-      "issue_url": "https://github.com/patrickkidd/theapp/issues/5",
-      "status": "pending_approval"
+      "plan": "1. Read review-prs.sh at /Users/hurin/.openclaw/monitor/review-prs.sh\n2. Find the label creation logic\n3. Add a check: if label already exists, skip creation (gh label list --search 'reviewed-by-claude' or use gh api to check)\n4. Ensure the script doesn't spam the log with repeated label creation attempts",
+      "spawn_prompt": "Fix the review-prs.sh script that's stuck in a label creation loop.\n\nFile: /Users/hurin/.openclaw/monitor/review-prs.sh\n\nProblem: The review log at /Users/hurin/.openclaw/monitor/review.log shows '[btcopilot] Creating reviewed-by-claude label...' repeated twice every 15 minutes, continuously. The script tries to create a GitHub label every run and either fails or doesn't detect it already exists.\n\nFix: Read the script, find where it creates the 'reviewed-by-claude' label, and add idempotent logic — check if the label exists before trying to create it. Use 'gh label list --search reviewed-by-claude' or 'gh api repos/{owner}/{repo}/labels/reviewed-by-claude' to check existence first. If label exists, skip creation silently.\n\nAlso check if there's a broader issue — the script may be failing before it gets to actual PR review, which would explain why it only logs label creation and nothing else.\n\nSuccess criteria: Running the script no longer produces 'Creating reviewed-by-claude label...' when the label already exists. Review log shows actual PR review activity or 'No open PRs' instead of repeated label creation attempts.",
+      "success_metric": "review.log stops showing repeated 'Creating reviewed-by-claude label...' entries every 15 minutes"
     }
   ]
 }
