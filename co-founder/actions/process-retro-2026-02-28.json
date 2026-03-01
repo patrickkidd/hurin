@@ -1,0 +1,15 @@
+{
+  "actions": [
+    {
+      "id": "process-retro-2026-02-28-1",
+      "title": "Fix review-prs.sh label application bug",
+      "category": "infrastructure",
+      "effort": "trivial",
+      "confidence": 0.95,
+      "repo": "none",
+      "plan": "1. Read review-prs.sh line 145 — gh pr edit --add-label is failing silently. 2. The likely issue is that the label doesn't exist or the gh command is running from the wrong directory. 3. Add error logging and fix the label application. 4. Verify by running --dry and checking label state.",
+      "spawn_prompt": "Fix the review-prs.sh script at ~/.openclaw/monitor/review-prs.sh. The script is supposed to add the 'reviewed-by-claude' label to PRs after reviewing them (line 145: `gh pr edit \"$PR_NUM\" --add-label \"$LABEL\"`), but it's failing silently — the label is never applied, causing the script to re-review the same PR every 15 minutes (106 times today for PR #33). Debug by: (1) running `cd ~/.openclaw/workspace-hurin/theapp/btcopilot && gh pr view 33 --json labels` to see current labels, (2) trying `gh pr edit 33 --add-label 'reviewed-by-claude'` manually to see the error, (3) fixing the script. Also add better error logging — the `|| { log ... }` block should capture stderr. Acceptance criteria: after fix, running review-prs.sh twice in a row should show 'already reviewed, skipping' on the second run for the same PR.",
+      "success_metric": "review.log shows 'already reviewed, skipping' for PRs that have been reviewed; no more redundant 15-minute review cycles"
+    }
+  ]
+}
