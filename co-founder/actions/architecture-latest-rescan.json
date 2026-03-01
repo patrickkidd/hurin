@@ -9,7 +9,9 @@
       "repo": "btcopilot",
       "plan": "1. Add index=True to diagram_id and user_id in AccessRight model\n2. Generate alembic migration\n3. Verify migration",
       "spawn_prompt": "In btcopilot, add missing database indexes to the AccessRight model.\n\nFile: btcopilot/btcopilot/pro/models/etc.py\n\nChange lines 46-47 from:\n```python\n    diagram_id = Column(Integer, ForeignKey(\"diagrams.id\"), nullable=False)\n    user_id = Column(Integer, ForeignKey(\"users.id\"), nullable=False)\n```\nTo:\n```python\n    diagram_id = Column(Integer, ForeignKey(\"diagrams.id\"), nullable=False, index=True)\n    user_id = Column(Integer, ForeignKey(\"users.id\"), nullable=False, index=True)\n```\n\nThen generate an alembic migration:\n```\ncd btcopilot && uv run alembic revision --autogenerate -m 'add_indexes_to_access_rights'\n```\n\nVerify the generated migration contains two CreateIndex operations for access_rights.diagram_id and access_rights.user_id.\n\nContext: check_write_access() and check_read_access() in btcopilot/btcopilot/pro/models/diagram.py:118-143 filter on these columns. Without indexes, every access check is a full table scan.\n\nAcceptance criteria: AccessRight FK columns have index=True, alembic migration generated and correct.",
-      "success_metric": "AccessRight FK columns have index=True, alembic migration file exists with two CreateIndex operations"
+      "success_metric": "AccessRight FK columns have index=True, alembic migration file exists with two CreateIndex operations",
+      "issue_url": "https://github.com/patrickkidd/theapp/issues/13",
+      "status": "pending_approval"
     },
     {
       "id": "architecture-latest-2",
@@ -20,7 +22,9 @@
       "repo": "btcopilot",
       "plan": "1. Add index=True to user_id in Diagram model\n2. Include in same or separate alembic migration",
       "spawn_prompt": "In btcopilot, add a missing database index to the Diagram model.\n\nFile: btcopilot/btcopilot/pro/models/diagram.py\n\nChange line 62 from:\n```python\n    user_id = Column(Integer, ForeignKey(\"users.id\"), nullable=False)\n```\nTo:\n```python\n    user_id = Column(Integer, ForeignKey(\"users.id\"), nullable=False, index=True)\n```\n\nNote: license.py already has index=True on its user_id (line 23), so this brings diagram.py in line with that pattern.\n\nThen generate an alembic migration:\n```\ncd btcopilot && uv run alembic revision --autogenerate -m 'add_index_to_diagrams_user_id'\n```\n\nAcceptance criteria: Diagram.user_id has index=True, alembic migration generated.",
-      "success_metric": "Diagram.user_id has index=True, alembic migration file exists"
+      "success_metric": "Diagram.user_id has index=True, alembic migration file exists",
+      "issue_url": "https://github.com/patrickkidd/theapp/issues/14",
+      "status": "pending_approval"
     },
     {
       "id": "architecture-latest-3",
@@ -31,7 +35,9 @@
       "repo": "btcopilot",
       "plan": "1. Add index=True to FK columns in Discussion, Statement, and Speaker models\n2. Generate alembic migration",
       "spawn_prompt": "In btcopilot, add missing database indexes to the personal app models. These are FK columns that lack indexes, causing full table scans on joins and filters.\n\nFile 1: btcopilot/btcopilot/personal/models/discussion.py\nChange line 24 from:\n```python\n    user_id = Column(Integer, db.ForeignKey(\"users.id\"))\n```\nTo:\n```python\n    user_id = Column(Integer, db.ForeignKey(\"users.id\"), index=True)\n```\n\nChange line 25 from:\n```python\n    diagram_id = Column(Integer, db.ForeignKey(\"diagrams.id\"))\n```\nTo:\n```python\n    diagram_id = Column(Integer, db.ForeignKey(\"diagrams.id\"), index=True)\n```\n\nFile 2: btcopilot/btcopilot/personal/models/statement.py\nChange line 22 from:\n```python\n    discussion_id = Column(Integer, ForeignKey(\"discussions.id\"))\n```\nTo:\n```python\n    discussion_id = Column(Integer, ForeignKey(\"discussions.id\"), index=True)\n```\n\nChange line 23 from:\n```python\n    speaker_id = Column(Integer, ForeignKey(\"speakers.id\"))\n```\nTo:\n```python\n    speaker_id = Column(Integer, ForeignKey(\"speakers.id\"), index=True)\n```\n\nFile 3: btcopilot/btcopilot/personal/models/speaker.py\nChange line 18 from:\n```python\n    discussion_id = Column(Integer, ForeignKey(\"discussions.id\"))\n```\nTo:\n```python\n    discussion_id = Column(Integer, ForeignKey(\"discussions.id\"), index=True)\n```\n\nThen generate an alembic migration:\n```\ncd btcopilot && uv run alembic revision --autogenerate -m 'add_indexes_to_personal_models_fks'\n```\n\nAcceptance criteria: All 5 FK columns have index=True, alembic migration generated with 5 CreateIndex operations.",
-      "success_metric": "All 5 FK columns have index=True, single alembic migration with 5 CreateIndex operations"
+      "success_metric": "All 5 FK columns have index=True, single alembic migration with 5 CreateIndex operations",
+      "issue_url": "https://github.com/patrickkidd/theapp/issues/15",
+      "status": "pending_approval"
     },
     {
       "id": "architecture-latest-4",
@@ -42,7 +48,9 @@
       "repo": "btcopilot",
       "plan": "1. Add index=True to user_id in Session model\n2. Generate alembic migration",
       "spawn_prompt": "In btcopilot, add a missing database index to the Session model.\n\nFile: btcopilot/btcopilot/pro/models/session.py\n\nChange line 17 from:\n```python\n    user_id = Column(Integer, ForeignKey(\"users.id\"), nullable=False)\n```\nTo:\n```python\n    user_id = Column(Integer, ForeignKey(\"users.id\"), nullable=False, index=True)\n```\n\nThen generate an alembic migration:\n```\ncd btcopilot && uv run alembic revision --autogenerate -m 'add_index_to_sessions_user_id'\n```\n\nAcceptance criteria: Session.user_id has index=True, alembic migration generated.",
-      "success_metric": "Session.user_id has index=True, alembic migration file exists"
+      "success_metric": "Session.user_id has index=True, alembic migration file exists",
+      "issue_url": "https://github.com/patrickkidd/theapp/issues/16",
+      "status": "pending_approval"
     },
     {
       "id": "architecture-latest-5",
@@ -53,7 +61,9 @@
       "repo": "btcopilot",
       "plan": "1. Remove commented-out cachetools import (line 10)\n2. Remove commented-out TTLCache init (line 103)\n3. Remove commented-out RAG code block (lines 222-246)\n4. Run tests to confirm nothing breaks",
       "spawn_prompt": "In btcopilot, remove dead commented-out code from the Pro copilot engine.\n\nFile: btcopilot/btcopilot/pro/copilot/engine.py\n\n1. Delete line 10:\n```python\n# from cachetools import TTLCache\n```\n\n2. Delete line 103 (inside __init__):\n```python\n        # self._conversation_chains = TTLCache(maxsize=1000, ttl=3600)\n```\n\n3. Delete lines 222-246 (the entire commented-out block at the end of the file after the Engine class). This is 25 lines of abandoned OllamaEmbeddings and ConversationalRetrievalChain code that was never completed:\n```python\n# from langchain_ollama import OllamaEmbeddings\n# embeddings = OllamaEmbeddings(\n#     # model_name=EMBEDDINGS_MODEL\n#     model_name=\"nomic-embed-text\"\n# )\n\n\n# retreiver = vector_db.as_retriever()\n# from langchain.chains import ConversationalRetrievalChain\n# from langchain.memory import ConversationBufferMemory\n# from langchain_community.chat_message_histories import SQLStatementHistory\n\n\n#         if conversation_id is None:  # New discussion\n#             chat_memory = SQLStatementHistory(\n#                 connection_string=str(db.engine.url), conversation_id=conversation_id\n#             )\n#             memory = ConversationBufferMemory(\n#                 chat_memory=chat_memory, return_messages=True\n#             )\n#             chain = ConversationalRetrievalChain.from_llm(llm, retriever, memory=memory)\n#             conversation_id = uuid.uuid()\n#             chain.conversation_id = conversation_id\n#             conversation_chains[conversation_id] = chain\n```\n\n4. Run: `cd btcopilot && uv run pytest btcopilot/tests/ -x -q --timeout=30 -k copilot` to verify nothing breaks.\n\nAcceptance criteria: All commented-out code removed, file ends after the Engine class definition (line ~220), tests pass.",
-      "success_metric": "engine.py has no commented-out code blocks, tests pass"
+      "success_metric": "engine.py has no commented-out code blocks, tests pass",
+      "issue_url": "https://github.com/patrickkidd/theapp/issues/17",
+      "status": "pending_approval"
     },
     {
       "id": "architecture-latest-6",
@@ -64,7 +74,9 @@
       "repo": "btcopilot",
       "plan": "1. Remove two redundant merge() calls after add() in set_free_diagram\n2. Run pro model tests",
       "spawn_prompt": "In btcopilot, remove redundant SQLAlchemy session operations in User.set_free_diagram().\n\nFile: btcopilot/btcopilot/pro/models/user.py\n\nThe method set_free_diagram (starting at line 142) has redundant merge() calls. After db_session.add(diagram), the diagram is already in the session — merge() is unnecessary and wastes a round-trip.\n\nChange lines 148-155 from:\n```python\n        if not self.free_diagram:\n            diagram = Diagram(user_id=self.id, name=\"Free Diagram\", data=bdata)\n            db_session = inspect(self).session\n            db_session.add(diagram)\n            db_session.merge(diagram)\n            self.update(free_diagram_id=diagram.id)\n            db_session.merge(diagram)\n            db_session.refresh(self)\n```\nTo:\n```python\n        if not self.free_diagram:\n            diagram = Diagram(user_id=self.id, name=\"Free Diagram\", data=bdata)\n            db_session = inspect(self).session\n            db_session.add(diagram)\n            db_session.flush()\n            self.update(free_diagram_id=diagram.id)\n            db_session.refresh(self)\n```\n\nNote: add() + flush() ensures diagram.id is assigned (needed for the FK update on the next line). The two merge() calls are removed as redundant. The refresh() at the end is kept to reload relationships.\n\nRun tests: `cd btcopilot && uv run pytest btcopilot/tests/ -x -q --timeout=60 -k 'free_diagram or set_free'`\nIf no specific tests match, run: `cd btcopilot && uv run pytest btcopilot/tests/pro/ -x -q --timeout=60`\n\nAcceptance criteria: Two merge() calls removed, replaced add+merge with add+flush, tests pass.",
-      "success_metric": "No merge() calls in set_free_diagram, flush() used to materialize diagram.id, tests pass"
+      "success_metric": "No merge() calls in set_free_diagram, flush() used to materialize diagram.id, tests pass",
+      "issue_url": "https://github.com/patrickkidd/theapp/issues/18",
+      "status": "pending_approval"
     },
     {
       "id": "architecture-latest-7",
@@ -75,7 +87,9 @@
       "repo": "btcopilot",
       "plan": "1. Remove commented-out Flask-Login and password reset code blocks\n2. Verify tests pass",
       "spawn_prompt": "In btcopilot, remove commented-out dead code from the User model.\n\nFile: btcopilot/btcopilot/pro/models/user.py\n\nRemove these commented-out blocks:\n\n1. Lines 71-73 (inside __init__):\n```python\n        # self.is_authenticated = False\n        # self.is_active = True\n        # self.is_anonymous = False\n```\n\n2. Lines 78-81 (Flask-Login get_id):\n```python\n    # Flask-Login\n    # def get_id(self) -> str:\n    #     \"\"\"Flask-Login\"\"\"\n    #     return str(self.id)\n```\n\n3. Lines 83-99 (password reset code methods):\n```python\n    # @staticmethod\n    # def generate_reset_password_code(email):\n    #     serializer = URLSafeTimedSerializer(app.config['SECRET_KEY'])\n    #     return serializer.dumps(email, salt=app.config['SECURITY_PASSWORD_SALT'])\n\n    # @staticmethod\n    # def confirm_reset_password_code(tokecode, expiration=3600):\n    #     serializer = URLSafeTimedSerializer(app.config['SECRET_KEY'])\n    #     try:\n    #         email = serializer.loads(\n    #             code,\n    #             salt=app.config['SECURITY_PASSWORD_SALT'],\n    #             max_age=expiration\n    #         )\n    #     except:\n    #         return False\n    #     return email\n```\n\nRun: `cd btcopilot && uv run pytest btcopilot/tests/pro/ -x -q --timeout=60`\n\nAcceptance criteria: All 3 commented-out blocks removed from user.py, tests pass.",
-      "success_metric": "No commented-out code blocks in user.py, tests pass"
+      "success_metric": "No commented-out code blocks in user.py, tests pass",
+      "issue_url": "https://github.com/patrickkidd/theapp/issues/19",
+      "status": "pending_approval"
     }
   ]
 }
