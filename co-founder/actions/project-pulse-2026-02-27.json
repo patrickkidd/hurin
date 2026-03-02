@@ -25,7 +25,8 @@
       "spawn_prompt": "Fix the review-prs.sh script that's stuck in a label creation loop.\n\nFile: /Users/hurin/.openclaw/monitor/review-prs.sh\n\nProblem: The review log at /Users/hurin/.openclaw/monitor/review.log shows '[btcopilot] Creating reviewed-by-claude label...' repeated twice every 15 minutes, continuously. The script tries to create a GitHub label every run and either fails or doesn't detect it already exists.\n\nFix: Read the script, find where it creates the 'reviewed-by-claude' label, and add idempotent logic — check if the label exists before trying to create it. Use 'gh label list --search reviewed-by-claude' or 'gh api repos/{owner}/{repo}/labels/reviewed-by-claude' to check existence first. If label exists, skip creation silently.\n\nAlso check if there's a broader issue — the script may be failing before it gets to actual PR review, which would explain why it only logs label creation and nothing else.\n\nSuccess criteria: Running the script no longer produces 'Creating reviewed-by-claude label...' when the label already exists. Review log shows actual PR review activity or 'No open PRs' instead of repeated label creation attempts.",
       "success_metric": "review.log stops showing repeated 'Creating reviewed-by-claude label...' entries every 15 minutes",
       "issue_url": "https://github.com/patrickkidd/theapp/issues/10",
-      "status": "pending_approval"
+      "status": "queued",
+      "approved_at": "2026-03-02T17:06:28Z"
     }
   ]
 }
