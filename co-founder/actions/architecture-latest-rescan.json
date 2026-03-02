@@ -12,7 +12,7 @@
       "success_metric": "AccessRight FK columns have index=True, alembic migration file exists with two CreateIndex operations",
       "issue_url": "https://github.com/patrickkidd/theapp/issues/13",
       "status": "approved",
-      "approved_at": "2026-03-02T05:59:16Z"
+      "approved_at": "2026-03-02T13:35:19Z"
     },
     {
       "id": "architecture-latest-2",
