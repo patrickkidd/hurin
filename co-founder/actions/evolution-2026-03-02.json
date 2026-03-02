@@ -9,7 +9,9 @@
       "repo": "none",
       "plan": "1. Add PATH export to top of spawn-task.sh. 2. Add PATH export to top of check-agents.py. 3. Verify the stuck queue drains on next cron cycle.",
       "spawn_prompt": "Fix the cron PATH issue that's blocking task spawning and hurin pings. Two files need the same fix:\n\n1. Edit `~/.openclaw/monitor/spawn-task.sh`: After line 13 (`set -euo pipefail`), add: `export PATH=\"/opt/homebrew/bin:$HOME/.local/bin:$PATH\"`\n\n2. Edit `~/.openclaw/monitor/check-agents.py`: After line 29 (`from feedback import capture_outcome`), add:\n```python\n# Ensure Homebrew tools (tmux, openclaw, gh, jq) are on PATH for cron contexts\nimport os\nos.environ['PATH'] = '/opt/homebrew/bin:' + os.path.expanduser('~/.local/bin:') + os.environ.get('PATH', '')\n```\n\nNote: check-agents.py already sets GH_TOKEN at lines 34-36, but it doesn't fix PATH. The PATH fix must come before any subprocess calls.\n\nAcceptance criteria: `spawn-task.sh` can find `tmux` when called from a minimal PATH environment (`env -i PATH=/usr/bin:/bin bash spawn-task.sh --help` should show usage, not 'command not found'). `check-agents.py`'s `ping_hurin()` can find `openclaw`.",
-      "success_metric": "Queue drains successfully on next cron cycle, hurin pings work from cron"
+      "success_metric": "Queue drains successfully on next cron cycle, hurin pings work from cron",
+      "issue_url": "https://github.com/patrickkidd/theapp/issues/30",
+      "status": "pending_approval"
     },
     {
       "id": "evolution-2026-03-02-2",
@@ -20,7 +22,9 @@
       "repo": "none",
       "plan": "1. Edit capture_tmux_output() in check-agents.py. 2. When tmux capture-pane fails, fall back to reading the last 100 lines of task-logs/{task_id}.log. 3. This gives the Ralph Loop actual diagnostic data.",
       "spawn_prompt": "Fix the failure capture in `~/.openclaw/monitor/check-agents.py` so the Ralph Loop gets real diagnostic data instead of 'Session was already dead' placeholders.\n\nEdit the `capture_tmux_output()` function (lines 93-107). After the existing tmux capture attempt fails (the else branch at line 104), instead of writing a useless placeholder, try to read the task log file:\n\n```python\ndef capture_tmux_output(session, task_id):\n    \"\"\"Capture last 100 lines from tmux session or task log. Save to failures dir.\"\"\"\n    FAILURES_DIR.mkdir(parents=True, exist_ok=True)\n    failure_log = FAILURES_DIR / f\"{task_id}.log\"\n\n    # Try live tmux capture first\n    code, output, _ = run(f\"tmux capture-pane -t '{session}' -p -S -100\")\n    if code == 0 and output:\n        failure_log.write_text(output)\n        log(f\"  Captured tmux output to {failure_log}\")\n        return str(failure_log)\n\n    # Session already dead — fall back to task log file\n    task_log = Path.home() / f\".openclaw/monitor/task-logs/{task_id}.log\"\n    if task_log.exists():\n        lines = task_log.read_text().splitlines()\n        last_100 = '\\n'.join(lines[-100:])\n        failure_log.write_text(f\"[From task log - session was dead]\\n{last_100}\")\n        log(f\"  Captured from task log to {failure_log}\")\n        return str(failure_log)\n\n    failure_log.write_text(f\"[Session '{session}' dead and no task log found]\\n\")\n    log(f\"  No capture source available for {failure_log}\")\n    return str(failure_log)\n```\n\nAcceptance criteria: The function imports Path (already imported at line 11). When a tmux session is dead, it reads from `~/.openclaw/monitor/task-logs/{task_id}.log` and writes the last 100 lines to the failure log. Run `python3 -c \"import check_agents; print('import OK')\"` from `~/.openclaw/monitor/` to verify no syntax errors.",
-      "success_metric": "Future failure logs contain actual CC output, enabling real Ralph Loop diagnosis"
+      "success_metric": "Future failure logs contain actual CC output, enabling real Ralph Loop diagnosis",
+      "issue_url": "https://github.com/patrickkidd/theapp/issues/31",
+      "status": "pending_approval"
     },
     {
       "id": "evolution-2026-03-02-3",
@@ -31,7 +35,9 @@
       "repo": "none",
       "plan": "1. Read active-tasks.json. 2. Find task cf-architecture-latest-5. 3. Update status to 'done', pr to 44, prUrl to the PR URL. 4. This corrects the false positive from the monitoring race condition.",
       "spawn_prompt": "Fix a monitoring false positive in the task registry. The task `cf-architecture-latest-5` in `~/.openclaw/workspace-hurin/theapp/.clawdbot/active-tasks.json` is marked as `status: 'failed'` with `pr: null`, but PR #44 was actually created successfully (confirmed in the task log at `~/.openclaw/monitor/task-logs/cf-architecture-latest-5.log` which says 'PR created: https://github.com/patrickkidd/btcopilot/pull/44').\n\nEdit `~/.openclaw/workspace-hurin/theapp/.clawdbot/active-tasks.json` and update the task with `id: 'cf-architecture-latest-5'`:\n- Change `status` from `'failed'` to `'done'`\n- Change `pr` from `null` to `44`\n- Add `prUrl: 'https://github.com/patrickkidd/btcopilot/pull/44'`\n\nAcceptance criteria: The JSON file is valid after editing. The task shows status 'done' with pr: 44.",
-      "success_metric": "Task registry accurately reflects that PR #44 was created"
+      "success_metric": "Task registry accurately reflects that PR #44 was created",
+      "issue_url": "https://github.com/patrickkidd/theapp/issues/32",
+      "status": "pending_approval"
     },
     {
       "id": "evolution-2026-03-02-4",
@@ -42,7 +48,9 @@
       "repo": "none",
       "plan": "1. Edit ~/.openclaw/monitor/spawn-task.sh. 2. In the TASKEOF delivery instructions, add a verification step before PR creation. 3. This implements the Spotify pre-PR verification pattern.",
       "spawn_prompt": "Edit `~/.openclaw/monitor/spawn-task.sh` to add a pre-PR self-verification step. In the delivery instructions heredoc (lines 101-125, inside the `cat > \"$WORKTREE/.task-prompt.txt\" <<TASKEOF` block), add a new step between step 2 (Push) and step 3 (Create a PR).\n\nFind the line that says:\n```\n3. **Create a PR** against master using \\`gh pr create\\` with a clear title and description.\n```\n\nInsert before it (making it the new step 3, and renumbering 'Create a PR' to step 4):\n```\n3. **Self-verify before PR creation**: Run \\`git diff --stat origin/master...HEAD\\` and review every file you changed. If you modified files not directly related to the original task above, revert those changes with \\`git checkout origin/master -- <file>\\`. Only create the PR if every changed file directly serves the task requirements.\n```\n\nAcceptance criteria: `spawn-task.sh` still runs without syntax errors (`bash -n ~/.openclaw/monitor/spawn-task.sh` returns 0). The .task-prompt.txt template includes the self-verification step.",
-      "success_metric": "Future spawned tasks include self-verification, reducing scope creep in agent PRs"
+      "success_metric": "Future spawned tasks include self-verification, reducing scope creep in agent PRs",
+      "issue_url": "https://github.com/patrickkidd/theapp/issues/33",
+      "status": "pending_approval"
     },
     {
       "id": "evolution-2026-03-02-5",
@@ -53,7 +61,9 @@
       "repo": "none",
       "plan": "1. Edit check-agents.py drain_queue(). 2. Track consecutive spawn failures per task in queue entries. 3. After 3 consecutive failures, mark the queue entry as 'blocked' and skip it. 4. Log the block so it's visible in monitor.log. 5. This prevents the current infinite 10-minute retry loop.",
       "spawn_prompt": "Fix the infinite retry loop in `~/.openclaw/monitor/check-agents.py`'s `drain_queue()` function (line 378). Currently, when `spawn-task.sh` fails (e.g., `tmux: command not found`), the task is re-inserted at the front of the queue and retried every 10 minutes forever.\n\nAdd a `spawn_failures` counter to queue entries. In the failure handling blocks (lines 438-444 and 446-451), increment `entry.setdefault('spawn_failures', 0)` by 1 before re-inserting. Add a check at the top of the spawn logic (after line 405 `entry = queue.pop(0)`) that skips entries with `spawn_failures >= 5`:\n\n```python\n    # Skip entries that have failed too many times\n    if entry.get('spawn_failures', 0) >= 5:\n        log(f\"  BLOCKED: {task_id} has failed to spawn {entry['spawn_failures']} times. Removing from queue.\")\n        # Don't re-insert — just save the updated queue without this entry\n        queue_data['queue'] = queue\n        with open(QUEUE_FILE, 'w') as f:\n            json.dump(queue_data, f, indent=2)\n        return\n```\n\nAlso increment the counter in both error paths:\n```python\n    entry['spawn_failures'] = entry.get('spawn_failures', 0) + 1\n```\n\nAcceptance criteria: `python3 -c \"import check_agents; print('OK')\"` succeeds from `~/.openclaw/monitor/`. After 5 consecutive spawn failures, the task is removed from the queue instead of retrying forever.",
-      "success_metric": "No more infinite retry loops in monitor.log when spawn-task.sh has a systemic error"
+      "success_metric": "No more infinite retry loops in monitor.log when spawn-task.sh has a systemic error",
+      "issue_url": "https://github.com/patrickkidd/theapp/issues/34",
+      "status": "pending_approval"
     }
   ]
 }
