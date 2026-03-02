@@ -11,7 +11,8 @@
       "spawn_prompt": "In btcopilot, add missing database indexes to the AccessRight model.\n\nFile: btcopilot/btcopilot/pro/models/etc.py\n\nChange lines 46-47 from:\n```python\n    diagram_id = Column(Integer, ForeignKey(\"diagrams.id\"), nullable=False)\n    user_id = Column(Integer, ForeignKey(\"users.id\"), nullable=False)\n```\nTo:\n```python\n    diagram_id = Column(Integer, ForeignKey(\"diagrams.id\"), nullable=False, index=True)\n    user_id = Column(Integer, ForeignKey(\"users.id\"), nullable=False, index=True)\n```\n\nThen generate an alembic migration:\n```\ncd btcopilot && uv run alembic revision --autogenerate -m 'add_indexes_to_access_rights'\n```\n\nVerify the generated migration contains two CreateIndex operations for access_rights.diagram_id and access_rights.user_id.\n\nContext: check_write_access() and check_read_access() in btcopilot/btcopilot/pro/models/diagram.py:118-143 filter on these columns. Without indexes, every access check is a full table scan.\n\nAcceptance criteria: AccessRight FK columns have index=True, alembic migration generated and correct.",
       "success_metric": "AccessRight FK columns have index=True, alembic migration file exists with two CreateIndex operations",
       "issue_url": "https://github.com/patrickkidd/theapp/issues/13",
-      "status": "pending_approval"
+      "status": "approved",
+      "approved_at": "2026-03-02T03:20:20Z"
     },
     {
       "id": "architecture-latest-2",
