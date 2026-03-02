@@ -1,0 +1,70 @@
+{
+  "actions": [
+    {
+      "id": "architecture-2026-03-01-1",
+      "title": "Fix test_pickle_contains_json_serializable_dicts CI failure",
+      "category": "velocity",
+      "effort": "trivial",
+      "confidence": 0.95,
+      "repo": "btcopilot",
+      "plan": "1. Read btcopilot/btcopilot/tests/pro/test_diagram_pickle_format.py. 2. The expected dict at line 35 is missing the top-level 'pair_bonds' key that set_diagram_data now writes. 3. Add 'pair_bonds': [] to the expected dict. 4. Run the test to confirm it passes.",
+      "spawn_prompt": "Fix the failing test in btcopilot/btcopilot/tests/pro/test_diagram_pickle_format.py::test_pickle_contains_json_serializable_dicts. The test creates a DiagramData with people, events, pdp, and lastItemId, calls diagram.set_diagram_data(), then asserts the pickled output matches an expected dict. The test fails because the actual pickle now includes a top-level 'pair_bonds': [] key that the expected dict at line 35 doesn't have. Fix: add 'pair_bonds': [] to the expected dict at the appropriate position (after 'events'). Run `uv run pytest btcopilot/btcopilot/tests/pro/test_diagram_pickle_format.py -v` to verify. Acceptance criteria: test passes locally.",
+      "success_metric": "test_pickle_contains_json_serializable_dicts passes in CI"
+    },
+    {
+      "id": "architecture-2026-03-01-2",
+      "title": "Gate test_update behind @pytest.mark.e2e",
+      "category": "velocity",
+      "effort": "trivial",
+      "confidence": 0.95,
+      "repo": "btcopilot",
+      "plan": "1. Read btcopilot/btcopilot/tests/training/test_pdp.py, find test_update. 2. It fails in CI with KeyError: 'GOOGLE_GEMINI_API_KEY' because it calls the real extraction pipeline. 3. Add @pytest.mark.e2e decorator to test_update so it only runs when --e2e flag is passed. 4. Verify with `uv run pytest btcopilot/btcopilot/tests/training/test_pdp.py -v` (without --e2e) that it gets skipped.",
+      "spawn_prompt": "Fix the CI failure in btcopilot/btcopilot/tests/training/test_pdp.py::test_update. This test fails in CI with `KeyError: 'GOOGLE_GEMINI_API_KEY'` because it calls the real Gemini extraction pipeline which requires API credentials not available in CI. Add the `@pytest.mark.e2e` decorator to the `test_update` function (and any other functions in the same file that call real LLM APIs). The e2e marker is already registered in conftest.py and causes tests to be skipped unless `--e2e` is passed. Import pytest at the top if not already imported. Run `uv run pytest btcopilot/btcopilot/tests/training/test_pdp.py -v` (without --e2e) to verify the test is properly skipped. Acceptance criteria: test is skipped in normal runs, CI passes.",
+      "success_metric": "btcopilot CI run shows 0 failures (552 passed, 26+ skipped)"
+    },
+    {
+      "id": "architecture-2026-03-01-3",
+      "title": "Delete dead test_ask_content.py module",
+      "category": "velocity",
+      "effort": "trivial",
+      "confidence": 0.90,
+      "repo": "btcopilot",
+      "plan": "1. Verify test_ask_content.py references nonexistent classes (DataPoint, StatementOrigin, ResponseDirection, Anxiety.detect, Triangle.detect). 2. Confirm none of these exist anywhere in the codebase. 3. Delete the file. 4. Run tests to confirm nothing breaks.",
+      "spawn_prompt": "Delete the dead test file btcopilot/btcopilot/tests/training/test_ask_content.py. This file has `pytest.skip('not done yet', allow_module_level=True)` at line 10 and references classes that don't exist in the codebase: DataPoint, StatementOrigin, ResponseDirection, Anxiety.detect(), Triangle.detect(). First verify these don't exist: `grep -r 'class DataPoint' btcopilot/` and `grep -r 'class StatementOrigin' btcopilot/` and `grep -r 'class ResponseDirection' btcopilot/` — all should return empty. Then delete the file: `rm btcopilot/btcopilot/tests/training/test_ask_content.py`. Run `uv run pytest btcopilot/btcopilot/tests/training/ -v --co` to confirm no import errors. Acceptance criteria: file deleted, test collection still works.",
+      "success_metric": "Dead test file removed, 25 skipped tests drops to 24"
+    },
+    {
+      "id": "architecture-2026-03-01-4",
+      "title": "Close stale PRs #34 and #36 (superseded by merged #35)",
+      "category": "velocity",
+      "effort": "trivial",
+      "confidence": 0.95,
+      "repo": "btcopilot",
+      "plan": "1. PR #35 (Add indexes to AccessRight foreign key columns) was already merged. 2. PRs #34 and #36 are earlier/later attempts at the same fix and are now stale. 3. Close both with a comment explaining they were superseded by #35.",
+      "spawn_prompt": "Close stale GitHub PRs in the btcopilot repo. PR #35 ('Add indexes to AccessRight foreign key columns') has already been merged. PRs #34 and #36 are earlier/later attempts at the same change and are now stale. Run: `cd btcopilot && gh pr close 34 --comment 'Superseded by #35 which has been merged.' && gh pr close 36 --comment 'Superseded by #35 which has been merged.'`. Acceptance criteria: both PRs show as closed on GitHub.",
+      "success_metric": "PRs #34 and #36 closed, open PR count reduced from 6 to 4"
+    },
+    {
+      "id": "architecture-2026-03-01-5",
+      "title": "Remove duplicate chromadb in pyproject.toml",
+      "category": "velocity",
+      "effort": "trivial",
+      "confidence": 0.98,
+      "repo": "btcopilot",
+      "plan": "1. Read btcopilot/pyproject.toml. 2. 'chromadb' appears twice in [project.optional-dependencies] app section — once at line ~18 and once in the training section around line ~46. 3. Remove the first occurrence (keep the one in the training section where it's semantically grouped). 4. Run `uv lock` to verify no changes to lockfile.",
+      "spawn_prompt": "Remove the duplicate 'chromadb' entry in btcopilot/pyproject.toml. Under [project.optional-dependencies] app, 'chromadb' appears twice: once near the top of the list (around line 18, between 'celery' and 'click') and once in the training section (around line 46, before 'langchain-chroma'). Remove the FIRST occurrence only — keep the one grouped with the other training/langchain dependencies. Then run `cd /Users/hurin/.openclaw/workspace-hurin/theapp && uv lock --check` to verify the lockfile is still valid. Acceptance criteria: 'chromadb' appears exactly once in pyproject.toml, uv lock still valid.",
+      "success_metric": "Clean pyproject.toml, no functional change"
+    },
+    {
+      "id": "architecture-2026-03-01-6",
+      "title": "Add eager loading to Session.account_editor_dict()",
+      "category": "bugfix",
+      "effort": "small",
+      "confidence": 0.80,
+      "repo": "btcopilot",
+      "plan": "1. Read btcopilot/btcopilot/pro/models/session.py. 2. account_editor_dict() at line 38 lazy-loads User.licenses, License.activations, License.policy in nested list comprehensions. 3. Replace User.query.filter_by(active=True) with User.query.options(joinedload(User.licenses).joinedload(License.activations), joinedload(User.licenses).joinedload(License.policy)).filter_by(active=True). 4. Also add joinedload for self.user.licenses. 5. Run existing pro tests to verify.",
+      "spawn_prompt": "Add eager loading to btcopilot/btcopilot/pro/models/session.py to eliminate N+1 queries. In `account_editor_dict()` (line 38): 1. Add `from sqlalchemy.orm import joinedload` at the top of the file. 2. Change line 47 from `User.query.filter_by(active=True)` to `User.query.options(joinedload(User.licenses).joinedload(License.activations).joinedload(Activation.machine), joinedload(User.licenses).joinedload(License.policy)).filter_by(active=True)`. You'll need to import User, License, Activation, Policy from btcopilot.pro.models. 3. Run `uv run pytest btcopilot/btcopilot/tests/pro/ -v` to verify all pro tests still pass. Acceptance criteria: all pro tests pass, account_editor_dict issues fewer queries (verifiable by enabling SQLAlchemy echo).",
+      "success_metric": "Pro test suite passes, login endpoint issues O(1) queries instead of O(N*M)"
+    }
+  ]
+}
