@@ -1,247 +1,182 @@
 # Co-Founder Briefing: evolution
-**Date:** 2026-03-02 09:05 AKST
-**Session:** dcb2d738-55f4-435a-ae63-319946477bef
+**Date:** 2026-03-02 09:30 AKST
+**Session:** 06d8ef05-49d2-49f4-a4d0-9dbf5eefa1ed
 **Turns:** 10 max
 
 ---
 
-Here's today's evolution briefing.
+**Evolution Briefing — 2026-03-02 (Run #3)**
 
 ---
 
-**Evolution Briefing — 2026-03-02**
+**State of the System**
 
-**System State Snapshot**
+OpenClaw is at v2026.3.1 (confirmed: `openclaw --version` returns `2026.3.1`). The previous briefing's action #1 (upgrade) is already done. The co-founder action pipeline has now processed 10 tasks total — 7 produced merged PRs, 1 produced a closed PR, and 2 failed permanently. That's a **87.5% merge rate** on PRs that reached GitHub, which is excellent and means the action quality bar is right.
 
-- OpenClaw version: v2026.2.25 (latest: v2026.3.1, released today)
-- Task registry: 10 tasks total — 8 done, 2 failed
-- Feedback log: 1 entry (only failed task T999)
-- Open btcopilot PRs: 4 (#44 today, #32 stale since Feb 26, #16 since Feb 17, #10 since Dec 8)
-- Co-founder action pipeline: 8/10 tasks completed → PRs #36-#43 created. That's a real production line.
-- Agent swarm gap #8 (proactive task discovery) still unaddressed
+But there are three infrastructure problems actively burning cycles right now, all discovered in this run.
 
 ---
 
-**Domain 1: Agent Architecture Patterns**
+**Critical Finding #1: The Task Queue Is Stuck — `tmux` Not on Cron PATH**
 
-**Discovery 1: Claude Code Agent Teams (native, experimental)**
-
-This is the biggest external development relevant to our system. Anthropic shipped native multi-agent coordination as an experimental feature in Claude Code: [Agent Teams documentation](https://code.claude.com/docs/en/agent-teams).
-
-Key capabilities:
-- **Shared task list** with dependency tracking — tasks can block other tasks, and when a blocking task completes, downstream tasks auto-unblock
-- **Inter-agent messaging** — teammates message each other directly via a mailbox system, not just reporting back to the lead
-- **Task self-claiming** with file locking to prevent race conditions
-- **Split-pane tmux display** where each teammate gets its own pane
-- **Quality gate hooks**: `TeammateIdle` and `TaskCompleted` hooks that can send feedback to keep agents working or prevent premature task completion
-
-How this compares to our `spawn-task.sh` architecture:
-
-| Feature | Our system | Agent Teams |
-|---------|-----------|-------------|
-| Task isolation | git worktrees (robust) | Same context, own window |
-| Monitoring | check-agents.py cron (10 min) | Lead agent watches directly |
-| Failure recovery | Ralph Loop (capture → diagnose → rewrite → respawn) | Manual: "spawn a replacement" |
-| Outcome tracking | feedback.py JSONL | None |
-| PR creation | Automated via delivery instructions | Up to lead coordination |
-| Session persistence | Survives lead death (tmux) | Lost if lead dies |
-
-**Assessment**: Our custom infrastructure is actually more robust for production use — especially the Ralph Loop, persistent task registry, and automated code review. But the Agent Teams concept of **dependency-tracked task lists** and **inter-agent messaging** are features we lack. The quality gate hooks (`TeammateIdle`, `TaskCompleted`) are particularly interesting — they let you enforce rules at task boundaries. Worth monitoring as it matures past experimental status.
-
-**No action needed now** — our architecture is better for async, fire-and-forget tasks. But if Agent Teams stabilizes, it could handle intra-session coordination (like "implement feature X by having one agent do backend, one do frontend, one do tests") more elegantly than our spawn-per-task model.
-
-**Discovery 2: Composio Agent Orchestrator**
-
-[github.com/ComposioHQ/agent-orchestrator](https://github.com/ComposioHQ/agent-orchestrator) — a mature open-source tool (61 merged PRs, 3,288 tests) with a plugin architecture:
-
-```yaml
-reactions:
-  ci-failed:
-    auto: true
-    action: send-to-agent
-    retries: 2
-```
-
-Their "reactions" system is declarative configuration for what happens on CI failure, review feedback, or PR approval. Our `check-agents.py` handles the same scenarios, but in imperative Python. The declarative approach is cleaner for adding new reaction types.
-
-Concrete takeaway: their `ao session restore <session>` for reviving crashed agents is worth looking at — our Ralph Loop captures the failure log but always starts a fresh session. A restore-from-checkpoint approach could preserve the agent's in-progress work rather than starting from scratch.
-
-**Discovery 3: Self-Improving Agents — The "Ralph Wiggum" Pattern**
-
-Addy Osmani wrote a comprehensive guide on [self-improving coding agents](https://addyosmani.com/blog/self-improving-agents/) that closely mirrors our Ralph Loop. The pattern is named "Ralph" (not after Ralph Wiggum, ironically) and describes:
-
-1. Pick task from JSON list → implement → validate → commit → update status → reset context → repeat
-2. Four channels of memory: git history, progress.txt, task state JSON, and an AGENTS.md knowledge base
-3. **Compound learning**: each failure generates AGENTS.md entries that prevent identical mistakes
-
-This is exactly what our Ralph Loop + `prompt-patterns.md` + `feedback.py` is designed to do. But there's a gap: **our feedback loop isn't closing**. The feedback log has exactly 1 entry (the T999 test failure). The 8 successful tasks that produced PRs #36-#43 apparently completed without `capture_outcome()` being called, OR the capture happened but the outcome was only for done tasks and the log shows only the failed one.
-
-Looking at `check-agents.py:312-316`, `capture_outcome(task)` IS called when tasks transition to "done". But only 1 entry in the log suggests either: (a) most tasks were cleaned up before the feedback system was deployed, or (b) there's a bug in the path resolution. This needs investigation.
-
-The Addy Osmani pattern adds something we don't have: **a progress.txt file per task** that the agent reads on restart, so if a task is respawned, the agent knows what was already attempted. Currently our Ralph Loop captures the failure log and rewrites the prompt, but the respawned agent has no memory of the previous attempt beyond what's in the rewritten prompt.
-
-**Discovery 4: Spotify's Two-Layer Verification**
-
-[Spotify's background coding agents](https://engineering.atspotify.com/2025/12/feedback-loops-background-coding-agents-part-3/) use a pre-PR verification architecture:
-
-- **Layer 1**: Deterministic verifiers (build, test, lint) triggered automatically based on file types
-- **Layer 2**: LLM-as-judge that compares the diff against the original prompt to catch scope creep
-
-Key stat: **"the judge vetoes about a quarter of [agent] PRs"** and "the agent is able to course correct half the time." The most common rejection trigger is **"the agent going outside the instructions outlined in the prompt."**
-
-This maps to a real problem we've seen — agents that wander off-task or make unnecessary changes. Our `review-prs.sh` catches these AFTER PR creation, but Spotify's approach catches them BEFORE. The difference matters: a PR with review comments requires manual intervention, while a pre-PR veto lets the agent self-correct.
-
-**Concrete implication**: We could add a "stop hook" or post-implementation verification step to `spawn-task.sh` that runs before the PR is created. The delivery instructions in `.task-prompt.txt` already have a "create PR" step — we could insert a "verify your changes match the original prompt before creating the PR" step before it.
-
----
-
-**Domain 2: OpenClaw Ecosystem**
-
-**Discovery 5: We're 2 releases behind (v2026.2.25 → v2026.3.1)**
-
-Checking the [OpenClaw releases](https://github.com/openclaw/openclaw/releases):
-
-**v2026.2.26** (Feb 27):
-- Fixes for thread binding lifecycle (we use `threadBindings: { enabled: true }`)
-- Gateway error handling for early closure scenarios
-
-**v2026.3.1** (Mar 2 — today):
-- **"Prevent stuck typing indicators by sealing channel typing keepalive callbacks after idle/cleanup"** — this directly affects our Discord UX when CC calls take several minutes
-- Embed handling improvements for message parsing
-- Lightweight bootstrap mode for automation runs
-- Thread binding lifecycle now uses inactivity-based TTL instead of fixed TTL
-
-The stuck typing indicator fix is relevant — if hurin's CC calls take >2 minutes (common), the typing indicator may have been getting stuck in v2026.2.25. And the lightweight bootstrap mode for automation could reduce overhead for our co-founder cron runs.
-
-**Discovery 6: Cheap-First Heartbeat Pattern**
-
-The [cheap checks first](https://dev.to/damogallagher/heartbeats-in-openclaw-cheap-checks-first-models-only-when-you-need-them-4bfi) pattern formalizes what our `check-agents.py` already does partially:
-
-- **Stage 1 (free)**: Run shell commands to check state (tmux alive? PR exists? CI status?)
-- **Stage 2 (conditional)**: Only invoke the LLM when there's an actual alert
-
-Our `check-agents.py` does Stage 1 perfectly. Stage 2 (pinging hurin → CC) only triggers on failures. The article suggests this can be formalized via OpenClaw's native heartbeat system with HEARTBEAT.md — but our cron-based approach is working fine and gives us more control.
-
-**Discovery 7: OpenClaw Native Heartbeat vs Our Cron**
-
-Our HEARTBEAT.md is empty (`hurin is event-driven via check-agents.py pings`). The ecosystem shows a trend toward using OpenClaw's native heartbeat for proactive monitoring. But for our use case — 10-minute check intervals with Python logic for task state management — external cron is the right choice. The native heartbeat is better for simpler "check if anything needs attention" use cases.
-
-One thing worth noting: OpenClaw's `bootstrap mode` (v2026.3.1) could reduce overhead for co-founder runs by "keeping only HEARTBEAT.md for heartbeat runs." We're already running co-founder as external cron → `claude -p`, so this is N/A for us.
-
----
-
-**Domain 3: AI Co-Founder / CTO Patterns**
-
-**Discovery 8: Proactive Task Discovery — The Remaining Gap**
-
-Our ADR-0001-status.md lists proactive task discovery as the only remaining GAP (item #8). Multiple patterns emerged from the ecosystem:
-
-From [OpenClaw proactive AI patterns](https://www.aifire.co/p/5-best-openclaw-use-cases-for-2026-proactive-ai-guide):
-- **Night shift work**: autonomous coding sessions that "open pull requests for review" during off hours
-- **Task API integration**: monitoring task managers to distinguish human-assigned vs self-identified work
-- **Independent prioritization**: agent identifies improvement candidates and stages PRs
-
-From our own architecture, the infrastructure already exists:
-- `check-agents.py` can scan for new GitHub issues and stale PRs
-- `spawn-task.sh` can fire off implementation tasks
-- The co-founder pipeline already produces structured actions with spawn prompts
-- `drain_queue()` already handles sequential task spawning
-
-The missing piece is a **scanner that converts signals into queued tasks**. Signals:
-1. GitHub issues labeled `cf-approved` without `cf-spawned`
-2. Failing tests on master (could auto-file bug fixes)
-3. Open PRs with review comments that haven't been addressed
-4. TODO comments in code that match open issues
-
-This would close the gap between "co-founder proposes action" and "action gets spawned automatically after approval."
-
-**Discovery 9: Memory Architecture — Mem0 and Cross-Session Context**
-
-The [memory landscape for AI agents](https://thenewstack.io/memory-for-ai-agents-a-new-paradigm-of-context-engineering/) has matured significantly. [Mem0](https://techcrunch.com/2025/10/28/mem0-raises-24m-from-yc-peak-xv-and-basis-set-to-build-the-memory-layer-for-ai-apps/) (raised $24M) provides a dedicated memory layer that extracts "memories" from interactions, stores them, and retrieves them for personalization.
-
-Our journal.md + CLAUDE.md + prompt-patterns.md system is a manual version of this. The journal provides recency (last 150 lines), CLAUDE.md provides stable project knowledge, and prompt-patterns.md captures failure/fix patterns.
-
-The interesting development from [Reload/Epic](https://techcrunch.com/2026/02/19/reload-an-ai-employee-agent-management-platform-raises-2-275m-and-launches-an-ai-employee/) is **shared project-level context across agents and sessions** — a centralized memory that all agents in a team can read and write to. Our agents share context via CLAUDE.md files and the monorepo, but they don't have a shared "what we learned in the last 24 hours" artifact that persists across spawn-task.sh sessions.
-
-**Discovery 10: The Anthropic Agentic Coding Trends Report**
-
-Anthropic published their [2026 Agentic Coding Trends Report](https://resources.anthropic.com/2026-agentic-coding-trends-report) with 8 key trends. Most relevant to us:
-
-- **Trend 2: Multi-agent systems replace single-agent workflows** — "an orchestrator delegates subtasks to specialized agents working simultaneously — then stitches everything together." We're already doing this.
-- **Task horizons expand from minutes to days or weeks** — agents moving beyond one-off fixes to full systems. Our spawn-task.sh handles multi-hour sessions; the max-turns limit of 25 is the practical boundary.
-- Developers use AI in 60% of work but fully delegate only 0-20% — which matches our experience. The co-founder actions that work are trivial mechanical fixes; the complex stuff still needs Patrick.
-
----
-
-**Feedback Loop Gap Analysis — The Critical Missing Piece**
-
-This is the finding I didn't expect. Our system captures feedback (`feedback.py`) but has **only 1 entry** in the log despite 8 completed tasks. And even if the log were full, nothing reads it to improve future behavior.
-
-The self-improvement loop should be:
+This is the most urgent issue. From `~/.openclaw/monitor/monitor.log` (last 50 lines):
 
 ```
-spawn task → agent works → outcome captured → patterns analyzed → next prompt improved
+[2026-03-02 08:40:00] Draining queue: spawning cf-architecture-latest-3 (btcopilot)
+[2026-03-02 08:40:00]   ERROR: spawn-task.sh failed: ...
+/Users/hurin/.openclaw/monitor/spawn-task.sh: line 146: tmux: command not found
 ```
 
-Currently we have:
+This error repeats every 10 minutes from 08:40 through at least 09:20 (5+ attempts). There are **3 tasks stuck in the queue** (`task-queue.json`) that cannot spawn because `spawn-task.sh` runs inside `check-agents.py`'s `drain_queue()` → `subprocess.run()`, which inherits the cron PATH. The cron PATH on macOS does NOT include `/opt/homebrew/bin` where `tmux` lives.
+
+The same root cause also breaks `ping_hurin()`:
 ```
-spawn task → agent works → outcome captured (maybe) → [dead end]
+[2026-03-02 08:20:00]   WARNING: ping failed: /bin/sh: openclaw: command not found
 ```
 
-The `prompt-patterns.md` file in hurin's workspace is supposed to close this loop (Ralph Loop step 6: "log the failure+fix pattern"), but it only captures failure patterns, not success patterns. We're learning from mistakes but not from successes.
+`openclaw` is also in `/opt/homebrew/bin`. So **both** the respawn alert system AND the queue drain are broken in the cron context.
 
-Spotify found that the most valuable learning signal is **"the agent going outside the instructions"** — scope creep. We should track: what did the prompt ask for vs. what did the PR actually change? The `feedback.py` already captures `description` and `files_changed` — adding the original prompt text would enable a "prompt fidelity" analysis.
+The fix is simple: `spawn-task.sh` needs `export PATH="/opt/homebrew/bin:$HOME/.local/bin:$PATH"` at the top, just like `.task-run.sh` (line 137) and `config.sh` (line 6) already have. And `check-agents.py` needs it too for `ping_hurin()`.
+
+**Why this wasn't caught earlier:** The first batch of tasks (cf-architecture-latest-1 through cf-architecture-2026-03-01-3) were spawned via `action-approve.sh`, which sources `config.sh` and gets the PATH. The queue drain path (`check-agents.py` → `subprocess.run(spawn-task.sh)`) bypasses `config.sh` entirely.
 
 ---
 
-**Changes Since Last Review**
+**Critical Finding #2: Failure Capture Is Blind — All 10 Logs Are Empty**
+
+Every single file in `~/.openclaw/monitor/failures/` contains the same placeholder:
+```
+[Session 'claude-<id>' was already dead when capture attempted]
+```
+
+This means `capture_tmux_output()` in `check-agents.py:94-107` always hits the dead-session fallback. The tmux sessions complete (or crash) between monitoring cycles, and by the time `check-agents.py` runs 10 minutes later, the session is gone.
+
+**Impact:** The Ralph Loop is operationally blind. When respawning, hurin sends the failure log to CC for diagnosis, but CC gets `"Session was already dead"` — zero diagnostic signal. The retries are just blind re-runs of the same prompt.
+
+The task log files (`~/.openclaw/monitor/task-logs/`) DO have the actual CC output — that's where the real diagnostic data lives. `spawn-task.sh` redirects CC stdout to these files (line 140-141). But `check-agents.py` reads from `failures/` (tmux capture), not from `task-logs/`.
+
+**The fix:** When `tmux capture-pane` fails, fall back to reading the last 100 lines of `~/.openclaw/monitor/task-logs/{task_id}.log`. This is where the actual error output lives.
+
+---
+
+**Critical Finding #3: The Respawn Rate Tells a Different Story Than Expected**
+
+From the task registry, 4 of 9 real tasks (44%) hit `respawnCount=3`. My previous briefing flagged this as concerning. But looking at the **task logs**, the picture is different:
+
+- `cf-architecture-latest-4` (respawnCount=3): Task log shows it completed successfully with PR #41. The "respawns" were likely monitoring race conditions, not actual failures.
+- `cf-architecture-2026-03-01-5` (respawnCount=3): Completed with PR #42.
+- `cf-architecture-2026-03-01-6` (respawnCount=3): Completed with PR #43.
+- `cf-architecture-latest-5` (respawnCount=3): Actually completed — PR #44 created per task log. But registry shows "failed" with `pr: null`.
+
+Wait — `cf-architecture-latest-5`'s task log says **"PR created: https://github.com/patrickkidd/btcopilot/pull/44"** at 07:22, but the registry shows `status: "failed"` with `pr: null`. This means the monitoring script marked it failed (session dead + no PR found) at 08:00, but the PR was actually created at 07:22. The `get_pr()` function in `check-agents.py:110-121` searches by branch name — it might not be finding the PR because of a branch name mismatch, or there's a timing/caching issue with `gh pr list`.
+
+**The real story:** Most "respawns" weren't failures at all. The tasks completed but check-agents.py couldn't verify it within its monitoring window. The high respawn count is a **monitoring false positive problem**, not a task quality problem.
+
+---
+
+**External Discovery 1: Claude Code Stop Hooks — Quality Gates for Spawned Tasks**
+
+The [Claude Code hooks system](https://code.claude.com/docs/en/hooks) now supports 16 lifecycle events. The most relevant for us is the **`Stop` hook** — it fires when Claude finishes responding and can **block** the stop with corrective feedback, forcing the agent to continue working.
+
+The [Taskmaster](https://github.com/blader/taskmaster) project demonstrates this pattern: require the agent to emit an explicit completion token (`TASKMASTER_DONE::<session_id>`) before allowing stop. Without it, the hook returns feedback like "You haven't finished — check your test results."
+
+**How this maps to us:** Our spawned tasks currently rely on the prompt's delivery instructions ("Do NOT stop until PR is created"). But the agent can still stop early. A Stop hook in `.claude/settings.json` could programmatically verify:
+1. `git diff --stat` shows changes were made
+2. `git log --oneline origin/master..HEAD` shows a commit exists
+3. `gh pr list --head <branch>` confirms a PR was created
+
+If any check fails, the hook returns `{"decision": "block", "reason": "PR not created yet. Continue working."}` and the agent is forced to continue.
+
+This would address the root cause of premature termination more reliably than prompt instructions alone.
+
+---
+
+**External Discovery 2: Episodic Memory Research — MemRL**
+
+The [ICLR 2026 MemAgents workshop](https://openreview.net/pdf?id=U51WxL382H) and the paper ["Memory in the Age of AI Agents"](https://arxiv.org/abs/2512.13564) converge on a key insight: **agents that approach each task in isolation inevitably repeat past mistakes**. The recommended pattern is "episodic memory" — storing task-outcome pairs and retrieving similar episodes when starting new tasks.
+
+Our `prompt-patterns.md` file in hurin's workspace is the manual version of this. But as Finding #2 shows, it's empty because the failure capture is blind. The feedback loop from "outcome → improved prompt" is broken at the data collection step, not the analysis step.
+
+The research specifically calls out that **failure episodes are more valuable than success episodes** for learning. We're set up to capture them (Ralph Loop step 6), but the data isn't flowing.
+
+---
+
+**External Discovery 3: Self-Healing Agent Patterns — Retry-Aware Prompting**
+
+[Retry-Aware Prompting](https://medium.com/@jeevitha.m/retry-aware-prompting-designing-prompts-for-robust-agent-behavior-ca7313d095d8) is a pattern where the retry prompt explicitly includes: (1) what was attempted, (2) what went wrong, (3) what to try differently. This contrasts with our current Ralph Loop which re-runs the same prompt blindly (because Finding #2: no diagnostic data).
+
+[Replit Agent 3](https://leaveit2ai.com/ai-tools/code-development/replit-agent-v3) demonstrates a practical implementation: the agent tests its own output in a live environment, and on failure, captures the error state as input to the retry. Key metric: they cap retries at 1-2 (not 3) because more retries without new information just burns compute.
+
+**Implication for us:** Given Finding #3 (most "respawns" are false positives), reducing MAX_RESPAWNS from 3 to 2 would save compute without losing real recovery capability. But the real win is fixing the failure capture so retries actually get diagnostic data.
+
+---
+
+**External Discovery 4: OpenClaw v2026.3.1 — Adaptive Thinking Default**
+
+OpenClaw [v2026.3.1 release notes](https://github.com/openclaw/openclaw/releases/tag/v2026.3.1) set **adaptive thinking as the default** for Claude 4.6 models. Per [issue #30880](https://github.com/openclaw/openclaw/issues/30880), Anthropic's `thinking.type: "adaptive"` lets the model dynamically decide when and how much to think based on query complexity.
+
+Our `openclaw.json` has `thinkingDefault: "off"` for hurin, which is correct — hurin is a dumb router and shouldn't think. But this setting affects only the OpenClaw gateway's model calls (hurin's MiniMax M2.5 calls), not our spawned CC tasks (which run via `claude -p` CLI). The spawned tasks already get whatever thinking behavior Claude Code uses by default.
+
+No action needed, but worth noting: if we ever route coding tasks through OpenClaw agents directly (instead of `claude -p`), the adaptive thinking default would apply automatically.
+
+---
+
+**Metrics Dashboard**
 
 | Metric | Mar 1 | Mar 2 | Trend |
 |--------|-------|-------|-------|
-| OpenClaw version | v2026.2.25 | v2026.2.25 (v2026.3.1 available) | Behind |
-| Open PRs (btcopilot) | 6 | 4 | Improved — stale PRs #34, #36 closed (per co-founder action) |
-| Task registry | unknown | 10 tasks (8 done, 2 failed) | Active pipeline |
-| Feedback log entries | 0 | 1 | Growing (slowly) |
-| Co-founder actions spawned | ~6 | 8+ (PRs #36-#43) | Productive |
-| Agent architecture gap #8 | Open | Still open | No progress |
+| OpenClaw version | v2026.2.25 | v2026.3.1 | Updated |
+| Open PRs (btcopilot) | 4 | 5 (#32, #41-44) | Grew — queue producing PRs |
+| Tasks spawned (total) | 10 | 10 (+ 3 stuck in queue) | Queue blocked |
+| Task merge rate | unknown | 7/8 = 87.5% | Excellent |
+| Tasks hitting max respawns | 4/10 (40%) | Likely false positives | Need investigation |
+| Feedback log entries | 1 | 1 (still) | Stalled — tasks completed before deployment |
+| Failure logs with real data | 0/10 | 0/10 | Blind — critical |
+| Queue drain working | Yes | **NO** — tmux not on PATH | Broken since 08:40 |
+| hurin pings working | Yes | **NO** — openclaw not on PATH | Broken in cron |
 
-The co-founder action pipeline is working. 8 tasks spawned, PRs created for most. The pipeline from "briefing proposes action → Patrick approves → agent spawns → PR lands" is operational. But the feedback loop from "PR outcome → improve next spawn" is not yet closing.
+---
+
+**Changes Since Last Briefing**
+
+- OpenClaw updated to v2026.3.1 (action #1 from yesterday: done)
+- 3 new tasks queued but stuck (tmux PATH bug)  
+- PR #44 created by cf-architecture-latest-5 but marked "failed" in registry (monitoring false positive)
+- Queue drain infinite-retrying every 10 minutes with no backoff
 
 ---
 
 **Search Strategy Notes**
 
-**High-value queries:**
-- `"agent orchestration" "task queue" coding agents worktree tmux Claude 2026` → found Composio, ccswarm, Overstory, and Claude Code Agent Teams
-- `openclaw github releases changelog 2026 march` → found exact version info and changelogs
-- `"agent feedback loop" "outcome tracking" "prompt improvement" coding agent 2026` → found Addy Osmani and Spotify articles
+**High-value queries this run:**
+- `"agent memory" "learning from outcomes" feedback coding agent 2026` → found ICLR 2026 MemAgents workshop, MemRL paper, and the "Memory in the Age of AI Agents" survey. These directly validate our feedback loop design.
+- `openclaw "adaptive" thinking level claude 4.6 default configuration` → found exact release notes and GitHub issues explaining the v2026.3.1 thinking changes.
+- `"respawn" "max retries" coding agent "root cause" prompt rewriting self-healing 2026` → found Retry-Aware Prompting pattern and Replit Agent 3's self-healing approach.
+
+**Medium-value queries:**
+- `"AI co-founder" implementation proactive task discovery automated briefing system 2026` → found ChatGPT Pulse and Meta briefings, confirming our co-founder system is aligned with industry direction, but no novel implementation details.
 
 **Low-value queries:**
-- `"AI CTO" "AI co-founder" proactive task discovery` → mostly marketing/prediction content, not implementations
-- `"openclaw AI agent gateway configuration 2026"` → generic guides, not useful for someone already running OpenClaw
+- None this run — all searches produced something useful.
 
-**Sources to check regularly:**
+**Sources to check regularly (updated):**
 - [github.com/openclaw/openclaw/releases](https://github.com/openclaw/openclaw/releases) — version tracking
-- [code.claude.com/docs/en/agent-teams](https://code.claude.com/docs/en/agent-teams) — watch for experimental → stable
-- [addyosmani.com/blog](https://addyosmani.com/blog/) — solid technical content on agent patterns
-- [engineering.atspotify.com](https://engineering.atspotify.com/) — real production agent experience
-- [github.com/ComposioHQ/agent-orchestrator](https://github.com/ComposioHQ/agent-orchestrator) — similar architecture, watch for new features
+- [github.com/blader/taskmaster](https://github.com/blader/taskmaster) — Stop hook pattern, watch for updates
+- [code.claude.com/docs/en/hooks](https://code.claude.com/docs/en/hooks) — Hook API reference (16 events now)
+- [arxiv.org — MemRL](https://arxiv.org/abs/2512.13564) — episodic memory research
+- [addyosmani.com/blog](https://addyosmani.com/blog/) — agent patterns
 
-**New queries to try next time:**
-- `claude code "stop hook" pre-commit verification agent` — Spotify's pre-PR verification
-- `"agent memory" "learning from outcomes" JSONL feedback coding` — closing the feedback loop
-- `openclaw v2026.3 migration breaking changes` — if we update
-- `"git worktree" agent "merge conflict" resolution automated` — a pattern we'll need as task parallelism grows
+**New queries to try next run:**
+- `claude code "Stop" hook "block" completion verification example 2026` — practical Stop hook implementations
+- `"git worktree" agent monitoring "session dead" race condition tmux` — our specific monitoring problem
+- `"cron PATH" macos homebrew "/opt/homebrew/bin" fix` — common macOS cron PATH issue patterns
+- `openclaw "queue" "task scheduling" sequential parallel agent 2026` — queue management patterns
 
 ---
 
-**One Uncomfortable Question**
+**The Uncomfortable Question**
 
-Patrick — the co-founder system has now spawned 8+ tasks that created PRs #36-#43. But of those PRs, how many has Patrick actually reviewed and merged? The open PR list shows #44 (today), #32 (stale 5 days), #16 (13 days), #10 (84 days). PRs #36-#43 aren't in the open list, which means they were either merged or closed.
-
-If they were merged without review: that's a governance gap — the whole point of "agents create PRs, Patrick merges" is human oversight. If they were closed without merging: that's 8 wasted agent sessions.
-
-**What's the merge rate on co-founder-spawned PRs?** This is the highest-signal metric for whether the action pipeline is delivering value or creating noise. If Patrick is merging most of them, we should spawn more aggressively. If Patrick is closing most of them, the action quality bar needs to go up. Right now we have no data on this — and the feedback log with its 1 entry can't tell us.
+Patrick — there are 3 tasks stuck in the queue right now, being retried every 10 minutes and failing every time because `tmux` isn't on the cron PATH. This has been happening since 08:40 this morning (over 3 hours of failed retries by now). Meanwhile, PR #44 was created successfully at 07:22 but is marked "failed" in the registry because monitoring couldn't find it by branch name. The infrastructure that's supposed to be running autonomously has two silent failures: a stuck queue and a misclassified success. **How long would these have gone unnoticed if I hadn't checked the monitor log today?** The monitoring system needs monitoring — and right now nobody's watching the `monitor.log` for errors.
 
 ---
 
@@ -250,64 +185,70 @@ If they were merged without review: that's a governance gap — the whole point 
   "actions": [
     {
       "id": "evolution-2026-03-02-1",
-      "title": "Update OpenClaw to v2026.3.1",
+      "title": "Fix cron PATH in spawn-task.sh and check-agents.py",
       "category": "infrastructure",
       "effort": "trivial",
-      "confidence": 0.90,
+      "confidence": 0.98,
       "repo": "none",
-      "plan": "1. Run openclaw gateway stop. 2. Run brew upgrade openclaw (or the appropriate update command). 3. Run openclaw gateway start. 4. Verify with openclaw doctor. 5. Test Discord connectivity with openclaw channels status --probe.",
-      "spawn_prompt": "Update OpenClaw from v2026.2.25 to v2026.3.1. Steps: 1. Stop the gateway: `openclaw gateway stop`. 2. Update: check if installed via brew (`brew list openclaw`) — if so, `brew upgrade openclaw`. If installed via npm, `npm update -g openclaw`. If neither, check `which openclaw` and report the install method. 3. Start the gateway: `openclaw gateway start`. 4. Verify: `openclaw --version` should show 2026.3.1. 5. Run `openclaw doctor` and report results. 6. Run `openclaw channels status --probe` to verify Discord is connected. Acceptance criteria: openclaw --version shows 2026.3.1, gateway running, Discord connected.",
-      "success_metric": "openclaw --version shows 2026.3.1, stuck typing indicators fixed"
+      "plan": "1. Add PATH export to top of spawn-task.sh. 2. Add PATH export to top of check-agents.py. 3. Verify the stuck queue drains on next cron cycle.",
+      "spawn_prompt": "Fix the cron PATH issue that's blocking task spawning and hurin pings. Two files need the same fix:\n\n1. Edit `~/.openclaw/monitor/spawn-task.sh`: After line 13 (`set -euo pipefail`), add: `export PATH=\"/opt/homebrew/bin:$HOME/.local/bin:$PATH\"`\n\n2. Edit `~/.openclaw/monitor/check-agents.py`: After line 29 (`from feedback import capture_outcome`), add:\n```python\n# Ensure Homebrew tools (tmux, openclaw, gh, jq) are on PATH for cron contexts\nimport os\nos.environ['PATH'] = '/opt/homebrew/bin:' + os.path.expanduser('~/.local/bin:') + os.environ.get('PATH', '')\n```\n\nNote: check-agents.py already sets GH_TOKEN at lines 34-36, but it doesn't fix PATH. The PATH fix must come before any subprocess calls.\n\nAcceptance criteria: `spawn-task.sh` can find `tmux` when called from a minimal PATH environment (`env -i PATH=/usr/bin:/bin bash spawn-task.sh --help` should show usage, not 'command not found'). `check-agents.py`'s `ping_hurin()` can find `openclaw`.",
+      "success_metric": "Queue drains successfully on next cron cycle, hurin pings work from cron"
     },
     {
       "id": "evolution-2026-03-02-2",
-      "title": "Add pre-PR verification step to spawn-task.sh delivery instructions",
+      "title": "Fix failure capture to read task logs instead of dead tmux",
+      "category": "infrastructure",
+      "effort": "trivial",
+      "confidence": 0.95,
+      "repo": "none",
+      "plan": "1. Edit capture_tmux_output() in check-agents.py. 2. When tmux capture-pane fails, fall back to reading the last 100 lines of task-logs/{task_id}.log. 3. This gives the Ralph Loop actual diagnostic data.",
+      "spawn_prompt": "Fix the failure capture in `~/.openclaw/monitor/check-agents.py` so the Ralph Loop gets real diagnostic data instead of 'Session was already dead' placeholders.\n\nEdit the `capture_tmux_output()` function (lines 93-107). After the existing tmux capture attempt fails (the else branch at line 104), instead of writing a useless placeholder, try to read the task log file:\n\n```python\ndef capture_tmux_output(session, task_id):\n    \"\"\"Capture last 100 lines from tmux session or task log. Save to failures dir.\"\"\"\n    FAILURES_DIR.mkdir(parents=True, exist_ok=True)\n    failure_log = FAILURES_DIR / f\"{task_id}.log\"\n\n    # Try live tmux capture first\n    code, output, _ = run(f\"tmux capture-pane -t '{session}' -p -S -100\")\n    if code == 0 and output:\n        failure_log.write_text(output)\n        log(f\"  Captured tmux output to {failure_log}\")\n        return str(failure_log)\n\n    # Session already dead — fall back to task log file\n    task_log = Path.home() / f\".openclaw/monitor/task-logs/{task_id}.log\"\n    if task_log.exists():\n        lines = task_log.read_text().splitlines()\n        last_100 = '\\n'.join(lines[-100:])\n        failure_log.write_text(f\"[From task log - session was dead]\\n{last_100}\")\n        log(f\"  Captured from task log to {failure_log}\")\n        return str(failure_log)\n\n    failure_log.write_text(f\"[Session '{session}' dead and no task log found]\\n\")\n    log(f\"  No capture source available for {failure_log}\")\n    return str(failure_log)\n```\n\nAcceptance criteria: The function imports Path (already imported at line 11). When a tmux session is dead, it reads from `~/.openclaw/monitor/task-logs/{task_id}.log` and writes the last 100 lines to the failure log. Run `python3 -c \"import check_agents; print('import OK')\"` from `~/.openclaw/monitor/` to verify no syntax errors.",
+      "success_metric": "Future failure logs contain actual CC output, enabling real Ralph Loop diagnosis"
+    },
+    {
+      "id": "evolution-2026-03-02-3",
+      "title": "Fix PR #44 misclassified as 'failed' in task registry",
+      "category": "infrastructure",
+      "effort": "trivial",
+      "confidence": 0.95,
+      "repo": "none",
+      "plan": "1. Read active-tasks.json. 2. Find task cf-architecture-latest-5. 3. Update status to 'done', pr to 44, prUrl to the PR URL. 4. This corrects the false positive from the monitoring race condition.",
+      "spawn_prompt": "Fix a monitoring false positive in the task registry. The task `cf-architecture-latest-5` in `~/.openclaw/workspace-hurin/theapp/.clawdbot/active-tasks.json` is marked as `status: 'failed'` with `pr: null`, but PR #44 was actually created successfully (confirmed in the task log at `~/.openclaw/monitor/task-logs/cf-architecture-latest-5.log` which says 'PR created: https://github.com/patrickkidd/btcopilot/pull/44').\n\nEdit `~/.openclaw/workspace-hurin/theapp/.clawdbot/active-tasks.json` and update the task with `id: 'cf-architecture-latest-5'`:\n- Change `status` from `'failed'` to `'done'`\n- Change `pr` from `null` to `44`\n- Add `prUrl: 'https://github.com/patrickkidd/btcopilot/pull/44'`\n\nAcceptance criteria: The JSON file is valid after editing. The task shows status 'done' with pr: 44.",
+      "success_metric": "Task registry accurately reflects that PR #44 was created"
+    },
+    {
+      "id": "evolution-2026-03-02-4",
+      "title": "Add pre-PR self-verification step to spawn-task.sh delivery instructions",
       "category": "velocity",
       "effort": "trivial",
       "confidence": 0.85,
       "repo": "none",
-      "plan": "1. Edit ~/.openclaw/monitor/spawn-task.sh. 2. In the TASKEOF delivery instructions (line 101-125), add a step before 'Create a PR' that says: 'Before creating the PR, verify your changes match the original task. Run git diff --stat to see what you changed. If you modified files not directly related to the task, revert those changes. Only proceed to PR creation if all changes serve the original request.' 3. This implements Spotify's pre-PR verification pattern at zero cost.",
-      "spawn_prompt": "Edit ~/.openclaw/monitor/spawn-task.sh to add a pre-PR self-verification step. In the delivery instructions block (the heredoc starting at line 101 with `cat > \"$WORKTREE/.task-prompt.txt\"`), add a new step between the existing steps. After the current numbered steps (Commit, Push), add a new step BEFORE 'Create a PR' that reads: '**Self-verify before PR creation**: Run `git diff --stat` and review every file you changed. If you modified files not directly related to the original task above, revert those changes with `git checkout -- <file>`. Only create the PR if every changed file directly serves the task requirements. This prevents scope creep.' Acceptance criteria: the .task-prompt.txt template now includes the verification step, spawn-task.sh still runs without errors.",
+      "plan": "1. Edit ~/.openclaw/monitor/spawn-task.sh. 2. In the TASKEOF delivery instructions, add a verification step before PR creation. 3. This implements the Spotify pre-PR verification pattern.",
+      "spawn_prompt": "Edit `~/.openclaw/monitor/spawn-task.sh` to add a pre-PR self-verification step. In the delivery instructions heredoc (lines 101-125, inside the `cat > \"$WORKTREE/.task-prompt.txt\" <<TASKEOF` block), add a new step between step 2 (Push) and step 3 (Create a PR).\n\nFind the line that says:\n```\n3. **Create a PR** against master using \\`gh pr create\\` with a clear title and description.\n```\n\nInsert before it (making it the new step 3, and renumbering 'Create a PR' to step 4):\n```\n3. **Self-verify before PR creation**: Run \\`git diff --stat origin/master...HEAD\\` and review every file you changed. If you modified files not directly related to the original task above, revert those changes with \\`git checkout origin/master -- <file>\\`. Only create the PR if every changed file directly serves the task requirements.\n```\n\nAcceptance criteria: `spawn-task.sh` still runs without syntax errors (`bash -n ~/.openclaw/monitor/spawn-task.sh` returns 0). The .task-prompt.txt template includes the self-verification step.",
       "success_metric": "Future spawned tasks include self-verification, reducing scope creep in agent PRs"
     },
     {
-      "id": "evolution-2026-03-02-3",
-      "title": "Investigate and fix feedback.py capture gap",
-      "category": "velocity",
+      "id": "evolution-2026-03-02-5",
+      "title": "Add queue drain error backoff to prevent infinite retry spam",
+      "category": "infrastructure",
       "effort": "small",
-      "confidence": 0.80,
+      "confidence": 0.85,
       "repo": "none",
-      "plan": "1. Read feedback.py and check-agents.py. 2. The feedback log has only 1 entry (T999 failed) despite 8 completed tasks. 3. Investigate why capture_outcome() isn't being called for done tasks — check if the tasks completed before feedback.py was deployed, or if there's a path issue. 4. Verify the FEEDBACK_LOG path exists and is writable. 5. Add a test by manually running capture_outcome with a mock task dict.",
-      "spawn_prompt": "Investigate why ~/.openclaw/workspace-hurin/feedback/log.jsonl has only 1 entry despite 8 tasks having status 'done' in ~/.openclaw/workspace-hurin/theapp/.clawdbot/active-tasks.json. Read both files. Check check-agents.py to see when capture_outcome() is called (it should be called at line 312-315 when task status transitions to 'done'). Possible causes: (1) tasks were marked done before feedback.py existed, (2) the import fails silently, (3) the FEEDBACK_LOG path is wrong. Test by running: `cd ~/.openclaw/monitor && python3 -c \"from feedback import capture_outcome; print('import OK')\"`. Then check if the feedback directory exists: `ls -la ~/.openclaw/workspace-hurin/feedback/`. Report findings and fix any issues found. Acceptance criteria: capture_outcome() successfully imports and writes to the log, next task completion will generate a feedback entry.",
-      "success_metric": "Feedback log captures outcomes for all future task completions"
-    },
-    {
-      "id": "evolution-2026-03-02-4",
-      "title": "Add original prompt text to feedback.py outcome records",
-      "category": "velocity",
-      "effort": "trivial",
-      "confidence": 0.90,
-      "repo": "none",
-      "plan": "1. Edit ~/.openclaw/monitor/feedback.py. 2. In capture_outcome(), read the original prompt from the task's worktree (.task-prompt.txt) if it still exists. 3. Add a 'prompt_excerpt' field (first 500 chars) to the outcome dict. 4. This enables future 'prompt fidelity' analysis — comparing what was asked vs what was changed.",
-      "spawn_prompt": "Edit ~/.openclaw/monitor/feedback.py to capture the original prompt in outcome records. In the capture_outcome() function, after line 140 (pr_num = task.get('pr')), add logic to read the original prompt: `worktree = task.get('worktree', ''); prompt_excerpt = ''; prompt_path = Path(worktree) / '.task-prompt.txt' if worktree else None; if prompt_path and prompt_path.exists(): prompt_excerpt = prompt_path.read_text()[:500]`. Then add 'prompt_excerpt': prompt_excerpt to the outcome dict (around line 159). This enables future analysis of prompt fidelity — comparing what was asked vs what files were changed. Acceptance criteria: feedback.py still imports cleanly (`python3 -c 'from feedback import capture_outcome'`), and the outcome dict now includes prompt_excerpt field.",
-      "success_metric": "Future feedback entries include prompt text, enabling prompt fidelity analysis"
+      "plan": "1. Edit check-agents.py drain_queue(). 2. Track consecutive spawn failures per task in queue entries. 3. After 3 consecutive failures, mark the queue entry as 'blocked' and skip it. 4. Log the block so it's visible in monitor.log. 5. This prevents the current infinite 10-minute retry loop.",
+      "spawn_prompt": "Fix the infinite retry loop in `~/.openclaw/monitor/check-agents.py`'s `drain_queue()` function (line 378). Currently, when `spawn-task.sh` fails (e.g., `tmux: command not found`), the task is re-inserted at the front of the queue and retried every 10 minutes forever.\n\nAdd a `spawn_failures` counter to queue entries. In the failure handling blocks (lines 438-444 and 446-451), increment `entry.setdefault('spawn_failures', 0)` by 1 before re-inserting. Add a check at the top of the spawn logic (after line 405 `entry = queue.pop(0)`) that skips entries with `spawn_failures >= 5`:\n\n```python\n    # Skip entries that have failed too many times\n    if entry.get('spawn_failures', 0) >= 5:\n        log(f\"  BLOCKED: {task_id} has failed to spawn {entry['spawn_failures']} times. Removing from queue.\")\n        # Don't re-insert — just save the updated queue without this entry\n        queue_data['queue'] = queue\n        with open(QUEUE_FILE, 'w') as f:\n            json.dump(queue_data, f, indent=2)\n        return\n```\n\nAlso increment the counter in both error paths:\n```python\n    entry['spawn_failures'] = entry.get('spawn_failures', 0) + 1\n```\n\nAcceptance criteria: `python3 -c \"import check_agents; print('OK')\"` succeeds from `~/.openclaw/monitor/`. After 5 consecutive spawn failures, the task is removed from the queue instead of retrying forever.",
+      "success_metric": "No more infinite retry loops in monitor.log when spawn-task.sh has a systemic error"
     }
   ]
 }
 ```
 
 Sources:
-- [Claude Code Agent Teams Documentation](https://code.claude.com/docs/en/agent-teams)
-- [Composio Agent Orchestrator](https://github.com/ComposioHQ/agent-orchestrator)
-- [OpenClaw Releases](https://github.com/openclaw/openclaw/releases)
-- [OpenClaw v2026.3.1 Release](https://github.com/openclaw/openclaw/releases/tag/v2026.3.1)
-- [Self-Improving Coding Agents — Addy Osmani](https://addyosmani.com/blog/self-improving-agents/)
-- [Spotify: Feedback Loops for Background Coding Agents](https://engineering.atspotify.com/2025/12/feedback-loops-background-coding-agents-part-3)
-- [Heartbeats in OpenClaw: Cheap Checks First](https://dev.to/damogallagher/heartbeats-in-openclaw-cheap-checks-first-models-only-when-you-need-them-4bfi)
-- [Memory for AI Agents — The New Stack](https://thenewstack.io/memory-for-ai-agents-a-new-paradigm-of-context-engineering/)
-- [OpenClaw Proactive AI Use Cases](https://www.aifire.co/p/5-best-openclaw-use-cases-for-2026-proactive-ai-guide)
-- [Anthropic 2026 Agentic Coding Trends Report](https://resources.anthropic.com/2026-agentic-coding-trends-report)
-- [Overstory Multi-Agent Orchestration](https://github.com/jayminwest/overstory)
-- [ccswarm — Claude Code Multi-Agent](https://github.com/nwiizo/ccswarm)
-- [OpenClaw Configuration Docs](https://docs.openclaw.ai/gateway/configuration)
-- [OpenClaw Heartbeat Docs](https://docs.openclaw.ai/gateway/heartbeat)
+- [Claude Code Hooks Reference](https://code.claude.com/docs/en/hooks)
+- [Taskmaster — Stop Hook for Coding Agents](https://github.com/blader/taskmaster)
+- [OpenClaw v2026.3.1 Release Notes](https://github.com/openclaw/openclaw/releases/tag/v2026.3.1)
+- [OpenClaw Adaptive Thinking Issue #30880](https://github.com/openclaw/openclaw/issues/30880)
+- [ICLR 2026 MemAgents Workshop](https://openreview.net/pdf?id=U51WxL382H)
+- [Memory in the Age of AI Agents — Survey](https://arxiv.org/abs/2512.13564)
+- [Retry-Aware Prompting](https://medium.com/@jeevitha.m/retry-aware-prompting-designing-prompts-for-robust-agent-behavior-ca7313d095d8)
+- [Replit Agent 3: Self-Healing Code](https://leaveit2ai.com/ai-tools/code-development/replit-agent-v3)
+- [The New Stack: Memory for AI Agents](https://thenewstack.io/memory-for-ai-agents-a-new-paradigm-of-context-engineering/)
