@@ -12,7 +12,7 @@
       "success_metric": "AccessRight FK columns have index=True, alembic migration file exists with two CreateIndex operations",
       "issue_url": "https://github.com/patrickkidd/theapp/issues/13",
       "status": "approved",
-      "approved_at": "2026-03-02T03:20:20Z"
+      "approved_at": "2026-03-02T05:30:22Z"
     },
     {
       "id": "architecture-latest-2",
@@ -25,7 +25,7 @@
       "spawn_prompt": "In btcopilot, add a missing database index to the Diagram model.\n\nFile: btcopilot/btcopilot/pro/models/diagram.py\n\nChange line 62 from:\n```python\n    user_id = Column(Integer, ForeignKey(\"users.id\"), nullable=False)\n```\nTo:\n```python\n    user_id = Column(Integer, ForeignKey(\"users.id\"), nullable=False, index=True)\n```\n\nNote: license.py already has index=True on its user_id (line 23), so this brings diagram.py in line with that pattern.\n\nThen generate an alembic migration:\n```\ncd btcopilot && uv run alembic revision --autogenerate -m 'add_index_to_diagrams_user_id'\n```\n\nAcceptance criteria: Diagram.user_id has index=True, alembic migration generated.",
       "success_metric": "Diagram.user_id has index=True, alembic migration file exists",
       "issue_url": "https://github.com/patrickkidd/theapp/issues/14",
-      "status": "queued"
+      "status": "pending_approval"
     },
     {
       "id": "architecture-latest-3",
