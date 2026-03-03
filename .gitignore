@@ -51,6 +51,13 @@ monitor/.venv/
 monitor/*.backup
 monitor/*.before-fix
 
+# === Team-lead runtime (ephemeral) ===
+team-lead/daemon.log
+team-lead/daemon-stderr.log
+team-lead/daemon-stdout.log
+team-lead/syntheses/
+team-lead/dedup-cache.json
+
 # === Co-founder runtime (ephemeral) ===
 co-founder/journal.md
 co-founder/cron.log

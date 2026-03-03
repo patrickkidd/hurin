@@ -64,6 +64,7 @@ TASK_LOGS = MONITOR_DIR / "task-logs"
 FAILURES_DIR = MONITOR_DIR / "failures"
 DAEMON_LOG = MONITOR_DIR / "daemon.log"
 KILL_DIR = MONITOR_DIR / "kill-sentinels"
+TASK_EVENTS = MONITOR_DIR / "task-events.jsonl"
 
 BOT_TOKEN_FILE = MONITOR_DIR / "hurin-bot-token"
 
@@ -143,6 +144,24 @@ def ping_hurin(msg):
 
 
 # _discord_api and DiscordThreadRelay imported from discord_relay module
+
+
+# ---------------------------------------------------------------------------
+# Event emission (for team-lead daemon)
+# ---------------------------------------------------------------------------
+
+def emit_event(event_type, **kwargs):
+    """Append a structured event to task-events.jsonl for the team-lead daemon."""
+    entry = {
+        "event": event_type,
+        "ts": datetime.now(timezone.utc).isoformat(),
+        **kwargs,
+    }
+    try:
+        with open(TASK_EVENTS, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+    except IOError as e:
+        log.warning(f"Failed to emit event {event_type}: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -800,6 +819,7 @@ async def run_task(entry, is_respawn=False, respawn_context=""):
     if killed:
         task_entry["status"] = "killed"
         save_registry(data)
+        emit_event("task_killed", task_id=task_id, repo=repo)
         discord_relay.set_status("killed")
         log.info(f"  Task {task_id} killed.")
         return
@@ -826,8 +846,11 @@ async def run_task(entry, is_respawn=False, respawn_context=""):
         pending = [c for c in checks if c.get("status") == "IN_PROGRESS"]
         passed = checks and not failed and not pending
 
+        emit_event("pr_created", task_id=task_id, repo=repo, pr_number=pr_num, pr_url=pr_url)
+
         if passed and review != "CHANGES_REQUESTED":
             task_entry["status"] = "done"
+            emit_event("task_completed", task_id=task_id, repo=repo, pr_number=pr_num)
             sync_project_board(task_entry, pr_num, "Done")
             ping_hurin(f"PR #{pr_num} ready for review ({task_id}, {repo}) | <{pr_url}>")
             try:
@@ -887,6 +910,8 @@ async def run_task(entry, is_respawn=False, respawn_context=""):
                      f"({task_entry['respawnCount'] + 1}/{MAX_RESPAWNS})")
             task_entry["status"] = "respawn_pending"
             save_registry(data)
+            emit_event("task_respawned", task_id=task_id, repo=repo,
+                       respawn_count=task_entry["respawnCount"] + 1)
             discord_relay.set_status("respawn")
 
             # Read failure context from log
@@ -899,6 +924,8 @@ async def run_task(entry, is_respawn=False, respawn_context=""):
         else:
             task_entry["status"] = "failed"
             save_registry(data)
+            emit_event("task_failed", task_id=task_id, repo=repo,
+                       respawn_count=task_entry["respawnCount"])
             discord_relay.set_status("failed")
             ping_hurin(
                 f"FAILED — {task_id} ({repo}): task failed, no PR, "
@@ -920,6 +947,7 @@ async def run_task(entry, is_respawn=False, respawn_context=""):
             task_entry["prUrl"] = pr_url
             task_entry["status"] = "pr_open"
             save_registry(data)
+            emit_event("pr_created", task_id=task_id, repo=repo, pr_number=pr_num, pr_url=pr_url)
             discord_relay.set_status("pr_open")
             log.info(f"  PR #{pr_num} found on recheck: {pr_url}")
         else:
@@ -927,6 +955,7 @@ async def run_task(entry, is_respawn=False, respawn_context=""):
             # (e.g. evaluation tasks, investigations, "no change needed" conclusions)
             task_entry["status"] = "done"
             save_registry(data)
+            emit_event("task_completed", task_id=task_id, repo=repo)
             discord_relay.set_status("done")
             log.info(f"  Task {task_id} completed successfully (no PR needed).")
             ping_hurin(
@@ -984,6 +1013,8 @@ def monitor_open_prs():
 
         if passed and review != "CHANGES_REQUESTED":
             task["status"] = "done"
+            emit_event("task_completed", task_id=tid, repo=task.get("repo", ""),
+                       pr_number=pr_num)
             sync_project_board(task, pr_num, "Done")
             ping_hurin(f"PR #{pr_num} ready for review ({tid}, {task.get('repo')}) | <{task.get('prUrl')}>")
             try:
