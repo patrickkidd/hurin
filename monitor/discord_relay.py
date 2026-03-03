@@ -9,12 +9,34 @@ styled, batched message streaming.
 import asyncio
 import json
 import logging
+import re
 import time
 import urllib.request
 from pathlib import Path
 
 from claude_agent_sdk import AssistantMessage, ResultMessage
 from claude_agent_sdk.types import TextBlock, ToolUseBlock
+
+# ---------------------------------------------------------------------------
+# Secret scrubbing — never leak credentials to Discord
+# ---------------------------------------------------------------------------
+
+_SECRET_PATTERNS = [
+    re.compile(r'AIza[A-Za-z0-9_-]{35}'),                          # Google API keys
+    re.compile(r'sk-[A-Za-z0-9]{32,}'),                             # OpenAI keys
+    re.compile(r'gh[ps]_[A-Za-z0-9]{36,}'),                         # GitHub tokens
+    re.compile(r'xox[bpas]-[A-Za-z0-9\-]{10,}'),                    # Slack tokens
+    re.compile(r'(?i)(api[_-]?key|api[_-]?secret|token|password|secret[_-]?key)\s*[=:]\s*["\']?([A-Za-z0-9_/+=\-]{20,})'),  # Generic KEY=value
+    re.compile(r'Bearer\s+[A-Za-z0-9_\-/.]{20,}'),                  # Bearer tokens
+    re.compile(r'-----BEGIN\s+(RSA\s+)?PRIVATE\s+KEY-----'),         # Private keys
+]
+
+
+def scrub_secrets(text):
+    """Replace detected secrets with [REDACTED]."""
+    for pattern in _SECRET_PATTERNS:
+        text = pattern.sub('[REDACTED]', text)
+    return text
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -232,10 +254,10 @@ class DiscordThreadRelay:
         return None
 
     def _post(self, content):
-        """Post a message to the thread."""
+        """Post a message to the thread. Scrubs secrets before sending."""
         if not self.thread_id:
             return
-        content = content[:1990]
+        content = scrub_secrets(content)[:1990]
         discord_api(
             "POST",
             f"https://discord.com/api/v10/channels/{self.thread_id}/messages",
@@ -255,10 +277,6 @@ class DiscordThreadRelay:
                         continue
                     self._text_count += 1
                     # Claude's text → blockquote (like CC's chat bubbles)
-                    # Truncate long text but keep it readable
-                    if len(text) > 400:
-                        text = text[:397] + "…"
-                    # Use blockquote for Claude's words
                     quoted = "\n".join(f"> {line}" for line in text.split("\n"))
                     self._append(quoted)
 
@@ -269,24 +287,33 @@ class DiscordThreadRelay:
                         self._append(formatted)
 
         elif isinstance(message, ResultMessage):
-            # Flush, then post final result bar
+            # Flush, then post final result bar + result text
             self._flush()
             mins = message.duration_ms / 60000
             turns = message.num_turns
+            stats = (
+                f"`{mins:.1f}min` · `{turns} turns` · "
+                f"`{self._tool_count} tool calls`\n"
+                f"session: `{message.session_id}`"
+            )
             if message.is_error:
-                self._post(
-                    f"## ❌ Task failed\n"
-                    f"`{mins:.1f}min` · `{turns} turns` · "
-                    f"`{self._tool_count} tool calls`\n"
-                    f"session: `{message.session_id}`"
-                )
+                self._post(f"## ❌ Task failed\n{stats}")
             else:
-                self._post(
-                    f"## ✅ Task complete\n"
-                    f"`{mins:.1f}min` · `{turns} turns` · "
-                    f"`{self._tool_count} tool calls`\n"
-                    f"session: `{message.session_id}`"
-                )
+                self._post(f"## ✅ Task complete\n{stats}")
+
+            # Post the full result text (CC's final summary)
+            result = (message.result or "").strip()
+            if result:
+                # Split into Discord-sized chunks
+                while result:
+                    chunk = result[:1990]
+                    if len(result) > 1990:
+                        # Try to split on a newline
+                        split_at = chunk.rfind("\n")
+                        if split_at > 200:
+                            chunk = result[:split_at]
+                    self._post(chunk)
+                    result = result[len(chunk):].lstrip("\n")
             return
 
         # Auto-flush on interval or size

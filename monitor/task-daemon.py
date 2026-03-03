@@ -614,8 +614,20 @@ async def run_task(entry, is_respawn=False, respawn_context=""):
 
     # --- Set up Discord thread relay ---
     discord_relay = DiscordThreadRelay(task_id, description, repo)
-    thread_id = discord_relay.create_thread()
-    if thread_id:
+
+    # Reuse existing thread on respawn/follow-up
+    existing_thread_id = entry.get("discordThreadId") or (existing and existing.get("discordThreadId"))
+    if existing_thread_id:
+        discord_relay.thread_id = existing_thread_id
+        thread_id = existing_thread_id
+        prefix = "🔁 Respawn" if is_respawn else "📩 Follow-up"
+        discord_relay._post(f"## {prefix}\nResuming in this thread.")
+        discord_relay.set_status("running")
+        log.info(f"  Reusing Discord thread: {thread_id}")
+    else:
+        thread_id = discord_relay.create_thread()
+
+    if thread_id and not existing_thread_id:
         discord_relay.set_status("running")
         task_entry["discordThreadId"] = thread_id
         upsert_task(load_registry(), task_entry)  # Save thread_id to registry
@@ -897,8 +909,7 @@ async def run_task(entry, is_respawn=False, respawn_context=""):
             except Exception as e:
                 log.warning(f"  feedback capture failed: {e}")
     else:
-        # Completed without error but no PR found — might need a second check
-        # Sometimes GH API is slow to index the PR
+        # Completed without error but no PR found — recheck once (GH API can be slow)
         log.info(f"  Task {task_id} finished (no error) but no PR detected. Will recheck.")
         await asyncio.sleep(15)
         pr = get_pr(branch, repo_dir)
@@ -911,21 +922,22 @@ async def run_task(entry, is_respawn=False, respawn_context=""):
             save_registry(data)
             discord_relay.set_status("pr_open")
             log.info(f"  PR #{pr_num} found on recheck: {pr_url}")
-            # Let the monitoring pass handle the rest
         else:
-            log.warning(f"  Task {task_id} completed but no PR found even after recheck.")
-            if task_entry["respawnCount"] < MAX_RESPAWNS:
-                task_entry["status"] = "respawn_pending"
-                save_registry(data)
-                discord_relay.set_status("respawn")
-            else:
-                task_entry["status"] = "failed"
-                save_registry(data)
-                discord_relay.set_status("failed")
-                try:
-                    capture_outcome(task_entry)
-                except Exception as e:
-                    log.warning(f"  feedback capture failed: {e}")
+            # No error + no PR = task legitimately completed without code changes
+            # (e.g. evaluation tasks, investigations, "no change needed" conclusions)
+            task_entry["status"] = "done"
+            save_registry(data)
+            discord_relay.set_status("done")
+            log.info(f"  Task {task_id} completed successfully (no PR needed).")
+            ping_hurin(
+                f"Task `{task_id}` ({repo}) completed without a PR. "
+                f"CC determined no code changes were needed. "
+                f"Result: {result_text[:300]}"
+            )
+            try:
+                capture_outcome(task_entry)
+            except Exception as e:
+                log.warning(f"  feedback capture failed: {e}")
 
 
 def _get_failure_context(task_id):
