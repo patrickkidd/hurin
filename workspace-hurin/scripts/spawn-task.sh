@@ -1,1 +1,0 @@
-/Users/hurin/.openclaw/monitor/spawn-task.sh
