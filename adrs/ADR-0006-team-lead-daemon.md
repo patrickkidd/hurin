@@ -42,7 +42,7 @@ GitHub (PRs, CI, Issues, Project #4) ──polls every 15min──────�
                               │
                     ┌─────────┴──────────┐
                     ▼                    ▼
-              Discord #planning     Task Queue
+              Discord #ops     Task Queue
               (recommendations)     (auto-spawned)
                                          │
                                     ┌────┘
@@ -94,7 +94,7 @@ Goal completion = weighted average across all milestone issues.
 - Only tasks where `Auto: CC` (no human judgment needed)
 - Must map to an existing MVP goal (has a milestone)
 - Creates GH issue first (source of truth), then spawns
-- Posts to Discord #planning with issue link before spawning
+- Posts to Discord #ops with issue link before spawning
 - Concurrent spawn limit: max 2 team-lead-originated tasks at once
 
 ### Proactive Velocity Features
@@ -161,7 +161,7 @@ Uses `claude-agent-sdk` `query()` with 3-turn budget:
 3. **Turn 3:** Produce structured JSON: `goal_status[]`, `recommendations[]`, `auto_spawn_candidates[]`, `health_summary`
 
 Auto-spawn candidates that pass guard rails are immediately executed.
-Recommendations for human tasks are posted to Discord #planning.
+Recommendations for human tasks are posted to Discord #ops.
 Both are deduplicated against a 24h cache.
 
 ### Auto-Spawn Flow
@@ -171,7 +171,7 @@ When the team lead identifies a 100% automatable task:
 1. **Create GitHub Issue** — title, description, milestone (goal), labels
 2. **Add to Project #4** — set Goal, Status=In Progress, Owner=Hurin, Priority
 3. **Enqueue to task-daemon** — write to `task-queue.json` with issue number linked
-4. **Post to Discord #planning** — "Spawned T-XX: [description] (Issue #NNN, Goal 1)"
+4. **Post to Discord #ops** — "Spawned T-XX: [description] (Issue #NNN, Goal 1)"
 5. **Track in Discord thread** — task daemon's existing Discord relay handles progress updates
 
 ## File Layout

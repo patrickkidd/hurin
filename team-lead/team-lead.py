@@ -11,7 +11,7 @@ Architecture:
   GitHub (PRs, CI, Issues, Project #4) → [team-lead polls every 15min]
     → Metrics Engine (local, no AI)
     → Synthesis Engine (Agent SDK, hourly during biz hours)
-    → Auto-spawn pipeline + Discord #planning
+    → Auto-spawn pipeline + Discord #ops
 """
 
 import asyncio
@@ -102,15 +102,15 @@ def discord_api(method, url, payload=None):
         return None
 
 
-def post_to_planning(content):
-    """Post a message to #planning."""
+def post_to_ops(content):
+    """Post a message to #ops."""
     # Discord max message length is 2000
     while content:
         chunk = content[:1990]
         content = content[1990:]
         discord_api(
             "POST",
-            f"https://discord.com/api/v10/channels/{DISCORD_PLANNING_CHANNEL_ID}/messages",
+            f"https://discord.com/api/v10/channels/{DISCORD_OPS_CHANNEL_ID}/messages",
             {"content": chunk},
         )
 
@@ -993,7 +993,7 @@ def auto_spawn(candidate, github_data):
     1. Create GitHub Issue
     2. Add to Project #4
     3. Enqueue to task-daemon
-    4. Post to Discord #planning
+    4. Post to Discord #ops
     """
     # Guard: check concurrent spawn limit
     if count_team_lead_spawned() >= MAX_CONCURRENT_SPAWNS:
@@ -1056,8 +1056,8 @@ def auto_spawn(candidate, github_data):
     task_id = f"tl-{issue_number or hashlib.sha256(title.encode()).hexdigest()[:8]}"
     enqueue_task(task_id, repo, title, spawn_prompt, issue_number=issue_number or None)
 
-    # 4. Post to Discord #planning
-    post_to_planning(
+    # 4. Post to Discord #ops
+    post_to_ops(
         f"**Auto-spawned:** `{task_id}`\n"
         f"> {title}\n"
         f"Issue: {issue_url}\n"
@@ -1118,7 +1118,7 @@ def process_synthesis(synthesis, github_data, is_morning=False):
 
     message = "\n".join(parts)
     if message and not is_duplicate(dedup_key(f"brief:{brief_type}")):
-        post_to_planning(message)
+        post_to_ops(message)
         mark_seen(dedup_key(f"brief:{brief_type}"))
 
     # Execute auto-spawns
@@ -1211,7 +1211,7 @@ async def main_loop():
                         log.info(f"    [{a['severity']}] {a['message']}")
                         # High-severity anomalies bypass quiet hours
                         if a["severity"] == "high":
-                            post_to_planning(
+                            post_to_ops(
                                 f"**[{a['severity'].upper()}]** {a['message']}"
                             )
 
