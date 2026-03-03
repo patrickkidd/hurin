@@ -57,3 +57,5 @@ Then provide a briefing covering:
 
 **One Uncomfortable Question**
 - Is the agent system an accelerator or a procrastination project? Back your answer with data from this analysis.
+
+**Action Guidance:** Propose automation scripts, workflow improvements, and CI/CD enhancements. Target repo=infra for infrastructure scripts, or btcopilot/familydiagram for project-specific process fixes.

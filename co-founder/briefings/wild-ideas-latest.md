@@ -1,1 +1,1 @@
-wild-ideas-2026-02-26.md
+wild-ideas-2026-03-02.md

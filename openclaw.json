@@ -1,18 +1,27 @@
 {
   "meta": {
-    "lastTouchedVersion": "2026.2.24",
-    "lastTouchedAt": "2026-02-26T01:32:29.225Z"
+    "lastTouchedVersion": "2026.3.1",
+    "lastTouchedAt": "2026-03-02T21:47:15.450Z"
   },
   "wizard": {
-    "lastRunAt": "2026-02-26T01:32:29.194Z",
-    "lastRunVersion": "2026.2.24",
-    "lastRunCommand": "configure",
+    "lastRunAt": "2026-03-02T21:47:15.441Z",
+    "lastRunVersion": "2026.3.1",
+    "lastRunCommand": "doctor",
     "lastRunMode": "local"
+  },
+  "diagnostics": {
+    "cacheTrace": {
+      "enabled": true
+    }
   },
   "auth": {
     "profiles": {
       "anthropic:default": {
         "provider": "anthropic",
+        "mode": "api_key"
+      },
+      "minimax:default": {
+        "provider": "minimax",
         "mode": "api_key"
       }
     }
@@ -20,11 +29,11 @@
   "agents": {
     "defaults": {
       "model": {
-        "primary": "anthropic/claude-haiku-4-5"
+        "primary": "minimax/MiniMax-M2.5"
       },
       "models": {
-        "anthropic/claude-haiku-4-5": {
-          "alias": "haiku",
+        "minimax/MiniMax-M2.5": {
+          "alias": "m25",
           "params": {
             "cacheRetention": "short"
           }
@@ -38,9 +47,12 @@
           "enabled": true
         }
       },
+      "thinkingDefault": "off",
+      "typingIntervalSeconds": 6,
+      "typingMode": "message",
       "heartbeat": {
-        "model": "anthropic/claude-haiku-4-5",
-        "every": "55m"
+        "every": "55m",
+        "model": "minimax/MiniMax-M2.5"
       },
       "maxConcurrent": 2,
       "subagents": {
@@ -49,10 +61,7 @@
       "sandbox": {
         "mode": "off",
         "workspaceAccess": "rw"
-      },
-      "thinkingDefault": "off",
-      "typingMode": "message",
-      "typingIntervalSeconds": 6
+      }
     },
     "list": [
       {
@@ -60,7 +69,7 @@
         "name": "hurin",
         "workspace": "/Users/hurin/.openclaw/workspace-hurin",
         "agentDir": "/Users/hurin/.openclaw/agents/hurin/agent",
-        "model": "anthropic/claude-haiku-4-5",
+        "model": "minimax/MiniMax-M2.5",
         "tools": {
           "allow": [
             "exec",
@@ -116,6 +125,17 @@
           "id": "1476739270663213197"
         }
       }
+    },
+    {
+      "agentId": "hurin",
+      "match": {
+        "channel": "discord",
+        "accountId": "hurin",
+        "peer": {
+          "kind": "channel",
+          "id": "1476950473893482587"
+        }
+      }
     }
   ],
   "messages": {
@@ -137,7 +157,7 @@
     },
     "threadBindings": {
       "enabled": true,
-      "ttlHours": 24
+      "idleHours": 24
     }
   },
   "channels": {
@@ -145,17 +165,19 @@
       "enabled": true,
       "groupPolicy": "allowlist",
       "historyLimit": 3,
+      "streaming": "off",
       "threadBindings": {
         "enabled": true,
-        "ttlHours": 24
+        "idleHours": 24
       },
       "accounts": {
         "hurin": {
           "enabled": true,
-          "historyLimit": 50,
           "token": "REDACTED_DISCORD_TOKEN_OLD",
           "allowBots": true,
           "groupPolicy": "allowlist",
+          "historyLimit": 50,
+          "streaming": "off",
           "guilds": {
             "1474833522710548490": {
               "requireMention": false,
@@ -171,10 +193,17 @@
                 },
                 "1476739270663213197": {
                   "allow": true
+                },
+                "1476950473893482587": {
+                  "allow": true
                 }
               }
             }
           }
+        },
+        "default": {
+          "groupPolicy": "allowlist",
+          "streaming": "off"
         }
       }
     }
@@ -191,13 +220,6 @@
       "::1"
     ]
   },
-  "plugins": {
-    "entries": {
-      "discord": {
-        "enabled": true
-      }
-    }
-  },
   "skills": {
     "entries": {
       "cofounder": {
@@ -205,9 +227,21 @@
       }
     }
   },
-  "diagnostics": {
-    "cacheTrace": {
-      "enabled": true
+  "plugins": {
+    "entries": {
+      "discord": {
+        "enabled": true
+      }
+    }
+  },
+  "memory": {
+    "backend": "qmd",
+    "qmd": {
+      "command": "/Users/hurin/.bun/bin/bun /Users/hurin/.bun/install/global/node_modules/@tobilu/qmd/dist/qmd.js",
+      "update": {
+        "interval": "5m",
+        "onBoot": true
+      }
     }
   }
 }

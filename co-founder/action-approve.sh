@@ -10,7 +10,39 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/config.sh"
-source "$HOME/.openclaw/monitor/queue-helpers.sh"
+# Queue helpers — inline enqueue (daemon picks up in ≤30s)
+QUEUE_FILE="$HOME/.openclaw/monitor/task-queue.json"
+QUEUE_PROMPTS_DIR="$HOME/.openclaw/monitor/queue-prompts"
+
+_ensure_queue_infra() {
+    mkdir -p "$QUEUE_PROMPTS_DIR"
+    [[ -f "$QUEUE_FILE" ]] || echo '{"queue":[]}' > "$QUEUE_FILE"
+}
+
+enqueue_task() {
+    local task_id="$1" repo="$2" description="$3" prompt="$4" actions_file="${5:-}" action_index="${6:-0}" issue_number="${7:-}"
+    _ensure_queue_infra
+    echo "$prompt" > "$QUEUE_PROMPTS_DIR/${task_id}.txt"
+    local entry
+    entry="$(jq -n \
+        --arg tid "$task_id" --arg repo "$repo" --arg desc "$description" \
+        --arg pf "$QUEUE_PROMPTS_DIR/${task_id}.txt" \
+        --arg af "$actions_file" --argjson ai "$action_index" \
+        --arg issue "$issue_number" \
+        --arg ts "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+        '{task_id: $tid, repo: $repo, description: $desc, prompt_file: $pf, actions_file: $af, action_index: $ai, issue_number: $issue, queued_at: $ts}')"
+    local tmp="${QUEUE_FILE}.tmp.$$"
+    jq --argjson entry "$entry" '.queue += [$entry]' "$QUEUE_FILE" > "$tmp" && mv "$tmp" "$QUEUE_FILE"
+    jq '.queue | length' "$QUEUE_FILE"
+}
+
+has_running_tasks() {
+    local TASK_REGISTRY="$HOME/.openclaw/workspace-hurin/theapp/.clawdbot/active-tasks.json"
+    [[ -f "$TASK_REGISTRY" ]] || return 1
+    local count
+    count="$(jq '[.tasks[] | select(.status == "running")] | length' "$TASK_REGISTRY" 2>/dev/null)"
+    [[ "$count" -gt 0 ]]
+}
 
 ACTION_ID="${1:?Usage: action-approve.sh <action-id>}"
 
@@ -76,40 +108,18 @@ if [[ "$REPO" == "website" ]]; then
 elif [[ "$REPO" != "none" ]]; then
     TASK_ID="cf-${ACTION_ID}"
 
-    if has_running_tasks; then
-        # Queue behind running task
-        echo "  → Queuing task (another task is running): $TASK_ID"
-        QUEUE_POS="$(enqueue_task "$TASK_ID" "$REPO" "[co-founder] $TITLE" "$SPAWN_PROMPT" "$ACTIONS_FILE" "$ACTION_INDEX" "$ISSUE_NUMBER")"
-        jq ".actions[$ACTION_INDEX].status = \"queued\"" "$ACTIONS_FILE" > "${ACTIONS_FILE}.tmp" && mv "${ACTIONS_FILE}.tmp" "$ACTIONS_FILE"
+    # Always enqueue — daemon picks up in ≤30s
+    echo "  → Enqueuing task: $TASK_ID"
+    QUEUE_POS="$(enqueue_task "$TASK_ID" "$REPO" "[co-founder] $TITLE" "$SPAWN_PROMPT" "$ACTIONS_FILE" "$ACTION_INDEX" "$ISSUE_NUMBER")"
+    jq ".actions[$ACTION_INDEX].status = \"queued\" | .actions[$ACTION_INDEX].approved_at = \"$(date -u '+%Y-%m-%dT%H:%M:%SZ')\"" "$ACTIONS_FILE" > "${ACTIONS_FILE}.tmp" && mv "${ACTIONS_FILE}.tmp" "$ACTIONS_FILE"
 
-        if [[ -n "$ISSUE_NUMBER" ]]; then
-            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPO" --add-label "cf-approved" 2>/dev/null || true
-            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPO" \
-                --body "⏳ Approved and queued (position $QUEUE_POS). Will auto-spawn when current task finishes." 2>/dev/null || true
-        fi
-
-        echo "  → Queued behind running task (position $QUEUE_POS). Will auto-spawn when current finishes."
-    else
-        # Spawn immediately — nothing running
-        echo "  → Spawning task: $TASK_ID"
-        echo "$SPAWN_PROMPT" | "$HOME/.openclaw/monitor/spawn-task.sh" \
-            --repo "$REPO" \
-            --task "$TASK_ID" \
-            --description "[co-founder] $TITLE" \
-            ${ISSUE_NUMBER:+--issue "$ISSUE_NUMBER"} 2>&1
-
-        # Update status
-        jq ".actions[$ACTION_INDEX].status = \"queued\" | .actions[$ACTION_INDEX].approved_at = \"$(date -u '+%Y-%m-%dT%H:%M:%SZ')\"" "$ACTIONS_FILE" > "${ACTIONS_FILE}.tmp" && mv "${ACTIONS_FILE}.tmp" "$ACTIONS_FILE"
-
-        # Comment on GitHub issue and label
-        if [[ -n "$ISSUE_NUMBER" ]]; then
-            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPO" --add-label "cf-approved" --add-label "cf-spawned" 2>/dev/null || true
-            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPO" \
-                --body "✅ Approved and spawned as task \`$TASK_ID\`. Monitoring via check-agents.py." 2>/dev/null || true
-        fi
-
-        echo "  → Task spawned: $TASK_ID"
+    if [[ -n "$ISSUE_NUMBER" ]]; then
+        gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPO" --add-label "cf-approved" 2>/dev/null || true
+        gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPO" \
+            --body "✅ Approved and enqueued as task \`$TASK_ID\` (position $QUEUE_POS). Daemon picks up in ≤30s." 2>/dev/null || true
     fi
+
+    echo "  → Enqueued: $TASK_ID (position $QUEUE_POS)"
 elif [[ "$REPO" == "none" ]]; then
     # Infrastructure/monitor task — execute directly via Claude CLI
     echo "  → Infrastructure action (repo=none): executing via Claude CLI"
@@ -136,6 +146,7 @@ PROMPT
 else
     echo "ERROR: Action $ACTION_ID has unknown repo value: '$REPO'" >&2
     exit 1
+fi
 # Commit and push
 (
     cd "$HOME/.openclaw"
@@ -157,4 +168,4 @@ else
 )
 
 
-echo "[$(date '+%Y-%m-%d %H:%M')] Action $ACTION_ID approved and spawned."
+echo "[$(date '+%Y-%m-%d %H:%M')] Action $ACTION_ID approved and enqueued."

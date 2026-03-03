@@ -46,3 +46,5 @@ Then provide a briefing covering:
 
 **One Uncomfortable Question**
 - Are free licenses a growth strategy or a way to avoid charging for the product? What evidence would distinguish between the two?
+
+**Action Guidance:** Propose outreach email drafts, partnership pitch materials, and training program landing pages. Use repo=website for content actions. Code changes for licensing/billing target btcopilot.

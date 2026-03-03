@@ -43,3 +43,5 @@ Then provide a briefing covering:
 
 **One Uncomfortable Question**
 - Are we building support systems before we have users, or is there an actual support need right now? What should we actually prioritize?
+
+**Action Guidance:** Propose help content pages, improved error messages, and FAQ drafts. Use repo=website for content actions (WordPress drafts). Code fixes for error messages target btcopilot or familydiagram.

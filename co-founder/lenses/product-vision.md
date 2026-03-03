@@ -38,3 +38,5 @@ Then provide a briefing covering:
 
 **One Uncomfortable Question**
 - Challenge Patrick on a product decision he might be making out of habit rather than user need. Be specific — reference something you found in the code.
+
+**Action Guidance:** Propose UX improvements, onboarding flow fixes, and feature scope adjustments. Target btcopilot or familydiagram repos for code changes.

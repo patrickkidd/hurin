@@ -37,3 +37,5 @@ Then provide a briefing covering:
 
 **One Uncomfortable Question**
 - Ask Patrick one hard question about priorities, scope, or pace that he might be avoiding. Ground it in evidence from what you found.
+
+**Action Guidance:** Focus on unblocking PRs, spawning priority tasks, cleanup scripts, and stale branch removal. Code actions should target btcopilot or familydiagram repos.

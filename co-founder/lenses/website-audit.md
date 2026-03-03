@@ -42,3 +42,5 @@ Based on your findings and knowledge of SaaS marketing best practices for therap
 
 **One Uncomfortable Question**
 - Is the website actually converting visitors, or is it a brochure that nobody reads? What data would we need to answer this?
+
+**Action Guidance:** Propose blog post drafts, SEO content, conversion copy, and landing page improvements. Use repo=website for content actions — these create WordPress drafts automatically.

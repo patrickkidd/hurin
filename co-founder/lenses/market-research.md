@@ -44,3 +44,5 @@ Based on your training knowledge about the therapy software landscape, AI tools,
 
 **One Uncomfortable Question**
 - Is there evidence that the market actually wants what we're building, or are we building for ourselves? Be specific about what signals are missing.
+
+**Action Guidance:** Propose positioning content, SEO keyword-targeted articles, and competitive comparison pages. Use repo=website for content actions. Most strategic insights should be inform tier.

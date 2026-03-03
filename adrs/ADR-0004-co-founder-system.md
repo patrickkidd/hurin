@@ -73,6 +73,7 @@ The `/cofounder` OpenClaw skill allows Patrick to run any lens on demand:
 | 11:00 AM | Sat | process-retro | Dev process efficiency, time allocation |
 | 10:00 AM | Sun | website-audit | alaskafamilysystems.com conversion/UX/SEO |
 | 10:01 AM | 1st & 15th | training-programs | Free license programs, renewals, outreach |
+| 8:00 AM | Daily | evolution | External intelligence: agent patterns, OpenClaw, AI co-founder techniques |
 
 ### Journal Memory Model
 
@@ -91,6 +92,16 @@ The `/cofounder` OpenClaw skill allows Patrick to run any lens on demand:
 - Channel is bound to hurin in openclaw.json so Patrick can reply and get CC responses
 - `/cofounder followup` resumes the CC session for context-aware follow-ups
 
+### Action Pipeline
+
+Each briefing may also produce structured action items (most don't — by design). See [ADR-0005: Action System](ADR-0005-action-system.md) for full details.
+
+- All actions require Patrick's approval — no auto-spawning
+- Quality over quantity: only genuine quick wins that CC can fully implement
+- Revenue items → `#quick-wins` channel, others → `#co-founder`
+- GitHub Issues are the source of truth; Discord is for notifications only
+- `/cofounder approve <id>` to spawn, `/cofounder refine <id> <feedback>` to iterate
+
 ## File Layout
 
 ```
@@ -98,13 +109,24 @@ The `/cofounder` OpenClaw skill allows Patrick to run any lens on demand:
   config.sh              # Paths, channel ID, Discord token, depth settings
   co-founder.sh          # Main runner script (agentic, multi-turn)
   discord-post.sh        # Discord API posting with message splitting
+  action-router.sh       # Routes actions: GitHub Issues + Discord + spawning
+  action-approve.sh      # Approves and spawns propose-tier actions
+  action-refine.sh       # Iterative refinement via CC session resumption
+  action-list.sh         # Dashboard of pending actions
+  wp-draft.sh            # WordPress draft creator via REST API
+  README.md              # Operator's quick-reference guide
   journal.md             # Persistent memory (append-only, 1000 line cap)
   cron.log               # Cron output log
-  briefings/             # Full briefing output files (gitignored)
+  actions.log            # Action router log (gitignored)
+  briefings/             # Full briefing output files
     <lens>-<date>.md     # e.g. architecture-2026-02-26.md
     <lens>-latest.md     # Symlink to most recent briefing per lens
   sessions/              # CC session IDs for resumption (gitignored)
     <lens>-session.txt   # Session ID from last run of each lens
+  actions/               # Action JSON files (committed)
+    <lens>-<date>.json   # Parsed actions from each briefing
+  website-content/       # WordPress draft backups (committed)
+    <action-id>.md       # Markdown with frontmatter
   lenses/
     project-pulse.md     # Daily operational awareness
     product-vision.md    # Product direction and UX
@@ -115,9 +137,10 @@ The `/cofounder` OpenClaw skill allows Patrick to run any lens on demand:
     customer-support.md  # Support patterns and community
     training-programs.md # Partnership and outreach programs
     process-retro.md     # Development process retrospective
+    evolution.md         # External intelligence and system evolution
 
 ~/.openclaw/skills/cofounder/
-  SKILL.md               # /cofounder slash command (run, followup, read)
+  SKILL.md               # /cofounder slash command (run, followup, read, approve, refine, actions)
 ```
 
 ## How to Add/Edit/Remove Lenses
@@ -161,3 +184,4 @@ The `/cofounder` OpenClaw skill allows Patrick to run any lens on demand:
 
 - [ADR-0001: Agent Swarm Setup](ADR-0001-agent-swarm.md) — parent architecture
 - [ADR-0003: Hurin Lockdown](ADR-0003-hurin-lockdown-validation.md) — tool restrictions
+- [ADR-0005: Action System](ADR-0005-action-system.md) — action pipeline, approval flow, WordPress integration

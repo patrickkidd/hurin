@@ -47,3 +47,5 @@ Then provide a briefing covering:
 
 **One Uncomfortable Question**
 - Point out one technical decision that might be over-engineered or under-engineered for the current stage. Be specific.
+
+**Action Guidance:** Every concrete finding with a clear mechanical fix MUST become a proposed action. This includes: dead code removal, missing database indexes, redundant operations, deprecated dependency updates (when drop-in), commented-out code cleanup, and any other fix where you've read the code and know exactly what to change. If you described a problem and know the solution, propose it — don't leave it as just an observation. Target btcopilot or familydiagram repos.

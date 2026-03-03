@@ -12,7 +12,7 @@
       "success_metric": "Users see 2-3 natural language insights about their family patterns after each extraction",
       "issue_url": "https://github.com/patrickkidd/theapp/issues/41",
       "status": "queued",
-      "approved_at": "2026-03-03T08:06:58Z"
+      "approved_at": "2026-03-03T08:20:34Z"
     },
     {
       "id": "wild-ideas-2026-03-02-2",
@@ -26,7 +26,7 @@
       "success_metric": "Comparison data showing whether simplified extraction improves People/Events/PairBond F1 scores",
       "issue_url": "https://github.com/patrickkidd/theapp/issues/42",
       "status": "queued",
-      "approved_at": "2026-03-03T08:07:04Z"
+      "approved_at": "2026-03-03T08:20:41Z"
     }
   ]
 }

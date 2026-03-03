@@ -21,15 +21,40 @@ agents/*/sessions/
 discord/
 subagents/
 
+
+__pycache__
+*.pyc
+.pytest_cache
+.env
+
+
+# === Monitor secrets ===
+monitor/discord-bot-token
+monitor/hurin-bot-token
+monitor/*-token
+monitor/.env
+
 # === Monitor runtime (ephemeral) ===
 monitor/monitor.log
 monitor/cron.log
 monitor/review.log
+monitor/daemon.log
+monitor/daemon-stderr.log
+monitor/daemon-stdout.log
 monitor/failures/
+monitor/task-logs/
+monitor/kill-sentinels/
+monitor/review-failures/
+monitor/task-queue.json
+monitor/evolution-actions-queue.json
+monitor/.venv/
+monitor/*.backup
+monitor/*.before-fix
 
 # === Co-founder runtime (ephemeral) ===
 co-founder/journal.md
 co-founder/cron.log
+co-founder/actions.log
 co-founder/sessions/
 
 # === Workspace personal/private artifacts ===
@@ -38,6 +63,9 @@ workspace-hurin/career/
 workspace-hurin/decisions-log.md
 workspace-hurin/memory/
 workspace-hurin/MEMORY.md
+workspace-hurin/*-worktrees/
+workspace-hurin/feedback/
+workspace-hurin/prod.dump
 
 # === General ===
 *.lock

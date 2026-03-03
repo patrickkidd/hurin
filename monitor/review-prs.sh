@@ -11,6 +11,12 @@
 
 set -euo pipefail
 
+# Ensure PATH includes homebrew for cron environment
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+
+# GitHub auth — use patrickkidd-hurin bot account
+export GH_TOKEN="$(cat "$HOME/.openclaw/monitor/hurin-bot-token" 2>/dev/null)"
+
 REPOS=(
     "$HOME/.openclaw/workspace-hurin/theapp/btcopilot"
     "$HOME/.openclaw/workspace-hurin/theapp/familydiagram"
@@ -18,13 +24,35 @@ REPOS=(
 LABEL="reviewed-by-claude"
 DRY_RUN=false
 LOG="$HOME/.openclaw/monitor/review.log"
+FAIL_DIR="$HOME/.openclaw/monitor/review-failures"
+MAX_RETRIES=3
+
+mkdir -p "$FAIL_DIR"
 
 [[ "${1:-}" == "--dry" ]] && DRY_RUN=true
 
 log() {
     local ts
     ts=$(date "+%Y-%m-%d %H:%M:%S")
-    echo "[$ts] $1" | tee -a "$LOG"
+    echo "[$ts] $1" >> "$LOG"
+}
+
+ensure_label() {
+    local repo_name="$1"
+    local owner_repo
+    owner_repo=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null) || {
+        log "[$repo_name] WARNING: Cannot determine repo owner/name, skipping label check"
+        return 1
+    }
+    # Check if label exists via API — gives clear 200/404, no ambiguity
+    if gh api "repos/$owner_repo/labels/$LABEL" --silent 2>/dev/null; then
+        return 0
+    fi
+    # Label doesn't exist — create it
+    log "[$repo_name] Creating '$LABEL' label..."
+    if ! gh label create "$LABEL" --description "PR has been reviewed by Claude" --color "7057ff" 2>&1; then
+        log "[$repo_name] WARNING: Failed to create label '$LABEL' (may already exist)"
+    fi
 }
 
 review_repo() {
@@ -32,18 +60,23 @@ review_repo() {
     local REPO_NAME
     REPO_NAME=$(basename "$REPO_DIR")
 
+    if [[ ! -d "$REPO_DIR" ]]; then
+        log "[$REPO_NAME] ERROR: Repo directory not found: $REPO_DIR"
+        return 0
+    fi
+
     cd "$REPO_DIR"
 
     # Ensure the label exists (idempotent)
-    if ! gh label list --json name --jq '.[].name' 2>/dev/null | grep -qx "$LABEL"; then
-        log "[$REPO_NAME] Creating '$LABEL' label..."
-        gh label create "$LABEL" --description "PR has been reviewed by Claude" --color "7057ff" 2>/dev/null || true
-    fi
+    ensure_label "$REPO_NAME"
 
     # Get open PRs
     local PRS
     PRS=$(gh pr list --state open --json number,title,headRefName \
-        --jq '.[] | select(true) | "\(.number)\t\(.title)\t\(.headRefName)"' 2>/dev/null)
+        --jq '.[] | select(true) | "\(.number)\t\(.title)\t\(.headRefName)"') || {
+        log "[$REPO_NAME] ERROR: Failed to list PRs"
+        return 0
+    }
 
     if [[ -z "$PRS" ]]; then
         log "[$REPO_NAME] No open PRs."
@@ -53,9 +86,18 @@ review_repo() {
     while IFS=$'\t' read -r PR_NUM PR_TITLE PR_BRANCH; do
         # Check if already reviewed
         local LABELS
-        LABELS=$(gh pr view "$PR_NUM" --json labels --jq '.labels[].name' 2>/dev/null)
+        LABELS=$(gh pr view "$PR_NUM" --json labels --jq '.labels[].name' 2>/dev/null) || true
         if echo "$LABELS" | grep -qx "$LABEL"; then
-            log "[$REPO_NAME] PR #$PR_NUM already reviewed, skipping."
+            continue
+        fi
+
+        # Check if this PR has exceeded retry limit
+        local FAIL_FILE="$FAIL_DIR/${REPO_NAME}-${PR_NUM}"
+        local FAIL_COUNT=0
+        if [[ -f "$FAIL_FILE" ]]; then
+            FAIL_COUNT=$(cat "$FAIL_FILE")
+        fi
+        if [[ "$FAIL_COUNT" -ge "$MAX_RETRIES" ]]; then
             continue
         fi
 
@@ -68,7 +110,7 @@ review_repo() {
 
         # Get the diff
         local DIFF
-        DIFF=$(gh pr diff "$PR_NUM" 2>/dev/null)
+        DIFF=$(gh pr diff "$PR_NUM" 2>/dev/null) || true
         if [[ -z "$DIFF" ]]; then
             log "  No diff for PR #$PR_NUM, skipping."
             continue
@@ -101,12 +143,17 @@ Be concise. Focus on actual problems, not style nitpicks. If the PR looks good, 
 Format your review as a bulleted list of findings, or 'LGTM - no issues found' if clean.
 
 DIFF:
-$DIFF" 2>/dev/null)
+$DIFF" 2>/dev/null) || true
 
         if [[ -z "$REVIEW" ]]; then
-            log "  Claude review returned empty for PR #$PR_NUM"
+            FAIL_COUNT=$((FAIL_COUNT + 1))
+            echo "$FAIL_COUNT" > "$FAIL_FILE"
+            log "  Claude review returned empty for PR #$PR_NUM (attempt $FAIL_COUNT/$MAX_RETRIES)"
             continue
         fi
+
+        # Review succeeded — clear any failure tracking
+        rm -f "$FAIL_FILE"
 
         # Post the review as a comment
         local COMMENT="## Automated Claude Review
@@ -116,10 +163,14 @@ $REVIEW
 ---
 *Automated review by Claude via \`review-prs.sh\`*"
 
-        gh pr review "$PR_NUM" --comment --body "$COMMENT" 2>/dev/null
+        gh pr review "$PR_NUM" --comment --body "$COMMENT" 2>/dev/null || {
+            log "[$REPO_NAME] WARNING: Failed to post review on PR #$PR_NUM"
+        }
 
         # Add the label to prevent re-reviewing
-        gh pr edit "$PR_NUM" --add-label "$LABEL" 2>/dev/null
+        gh pr edit "$PR_NUM" --add-label "$LABEL" 2>/dev/null || {
+            log "[$REPO_NAME] WARNING: Failed to add label to PR #$PR_NUM"
+        }
 
         log "[$REPO_NAME] Review posted on PR #$PR_NUM"
 

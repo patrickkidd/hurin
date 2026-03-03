@@ -46,3 +46,5 @@ Then provide a briefing covering:
 
 **One Uncomfortable Question**
 - Challenge a fundamental assumption Patrick hasn't questioned. Make it specific to something you found in the codebase or business model.
+
+**Action Guidance:** Only propose weekend-doable prototypes as auto/propose actions. Most ideas should be inform tier — this lens is for creative thinking, not production implementation.
