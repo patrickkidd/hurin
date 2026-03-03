@@ -2,68 +2,36 @@
   "actions": [
     {
       "id": "evolution-2026-03-02-1",
-      "title": "Fix cron PATH in spawn-task.sh and check-agents.py",
-      "category": "infrastructure",
-      "effort": "trivial",
-      "confidence": 0.98,
-      "repo": "none",
-      "plan": "1. Add PATH export to top of spawn-task.sh. 2. Add PATH export to top of check-agents.py. 3. Verify the stuck queue drains on next cron cycle.",
-      "spawn_prompt": "Fix the cron PATH issue that's blocking task spawning and hurin pings. Two files need the same fix:\n\n1. Edit `~/.openclaw/monitor/spawn-task.sh`: After line 13 (`set -euo pipefail`), add: `export PATH=\"/opt/homebrew/bin:$HOME/.local/bin:$PATH\"`\n\n2. Edit `~/.openclaw/monitor/check-agents.py`: After line 29 (`from feedback import capture_outcome`), add:\n```python\n# Ensure Homebrew tools (tmux, openclaw, gh, jq) are on PATH for cron contexts\nimport os\nos.environ['PATH'] = '/opt/homebrew/bin:' + os.path.expanduser('~/.local/bin:') + os.environ.get('PATH', '')\n```\n\nNote: check-agents.py already sets GH_TOKEN at lines 34-36, but it doesn't fix PATH. The PATH fix must come before any subprocess calls.\n\nAcceptance criteria: `spawn-task.sh` can find `tmux` when called from a minimal PATH environment (`env -i PATH=/usr/bin:/bin bash spawn-task.sh --help` should show usage, not 'command not found'). `check-agents.py`'s `ping_hurin()` can find `openclaw`.",
-      "success_metric": "Queue drains successfully on next cron cycle, hurin pings work from cron",
-      "issue_url": "https://github.com/patrickkidd/theapp/issues/30",
-      "status": "pending_approval"
-    },
-    {
-      "id": "evolution-2026-03-02-2",
-      "title": "Fix failure capture to read task logs instead of dead tmux",
-      "category": "infrastructure",
-      "effort": "trivial",
-      "confidence": 0.95,
-      "repo": "none",
-      "plan": "1. Edit capture_tmux_output() in check-agents.py. 2. When tmux capture-pane fails, fall back to reading the last 100 lines of task-logs/{task_id}.log. 3. This gives the Ralph Loop actual diagnostic data.",
-      "spawn_prompt": "Fix the failure capture in `~/.openclaw/monitor/check-agents.py` so the Ralph Loop gets real diagnostic data instead of 'Session was already dead' placeholders.\n\nEdit the `capture_tmux_output()` function (lines 93-107). After the existing tmux capture attempt fails (the else branch at line 104), instead of writing a useless placeholder, try to read the task log file:\n\n```python\ndef capture_tmux_output(session, task_id):\n    \"\"\"Capture last 100 lines from tmux session or task log. Save to failures dir.\"\"\"\n    FAILURES_DIR.mkdir(parents=True, exist_ok=True)\n    failure_log = FAILURES_DIR / f\"{task_id}.log\"\n\n    # Try live tmux capture first\n    code, output, _ = run(f\"tmux capture-pane -t '{session}' -p -S -100\")\n    if code == 0 and output:\n        failure_log.write_text(output)\n        log(f\"  Captured tmux output to {failure_log}\")\n        return str(failure_log)\n\n    # Session already dead — fall back to task log file\n    task_log = Path.home() / f\".openclaw/monitor/task-logs/{task_id}.log\"\n    if task_log.exists():\n        lines = task_log.read_text().splitlines()\n        last_100 = '\\n'.join(lines[-100:])\n        failure_log.write_text(f\"[From task log - session was dead]\\n{last_100}\")\n        log(f\"  Captured from task log to {failure_log}\")\n        return str(failure_log)\n\n    failure_log.write_text(f\"[Session '{session}' dead and no task log found]\\n\")\n    log(f\"  No capture source available for {failure_log}\")\n    return str(failure_log)\n```\n\nAcceptance criteria: The function imports Path (already imported at line 11). When a tmux session is dead, it reads from `~/.openclaw/monitor/task-logs/{task_id}.log` and writes the last 100 lines to the failure log. Run `python3 -c \"import check_agents; print('import OK')\"` from `~/.openclaw/monitor/` to verify no syntax errors.",
-      "success_metric": "Future failure logs contain actual CC output, enabling real Ralph Loop diagnosis",
-      "issue_url": "https://github.com/patrickkidd/theapp/issues/31",
-      "status": "pending_approval"
-    },
-    {
-      "id": "evolution-2026-03-02-3",
-      "title": "Fix PR #44 misclassified as 'failed' in task registry",
-      "category": "infrastructure",
-      "effort": "trivial",
-      "confidence": 0.95,
-      "repo": "none",
-      "plan": "1. Read active-tasks.json. 2. Find task cf-architecture-latest-5. 3. Update status to 'done', pr to 44, prUrl to the PR URL. 4. This corrects the false positive from the monitoring race condition.",
-      "spawn_prompt": "Fix a monitoring false positive in the task registry. The task `cf-architecture-latest-5` in `~/.openclaw/workspace-hurin/theapp/.clawdbot/active-tasks.json` is marked as `status: 'failed'` with `pr: null`, but PR #44 was actually created successfully (confirmed in the task log at `~/.openclaw/monitor/task-logs/cf-architecture-latest-5.log` which says 'PR created: https://github.com/patrickkidd/btcopilot/pull/44').\n\nEdit `~/.openclaw/workspace-hurin/theapp/.clawdbot/active-tasks.json` and update the task with `id: 'cf-architecture-latest-5'`:\n- Change `status` from `'failed'` to `'done'`\n- Change `pr` from `null` to `44`\n- Add `prUrl: 'https://github.com/patrickkidd/btcopilot/pull/44'`\n\nAcceptance criteria: The JSON file is valid after editing. The task shows status 'done' with pr: 44.",
-      "success_metric": "Task registry accurately reflects that PR #44 was created",
-      "issue_url": "https://github.com/patrickkidd/theapp/issues/32",
-      "status": "pending_approval"
-    },
-    {
-      "id": "evolution-2026-03-02-4",
-      "title": "Add pre-PR self-verification step to spawn-task.sh delivery instructions",
-      "category": "velocity",
-      "effort": "trivial",
-      "confidence": 0.85,
-      "repo": "none",
-      "plan": "1. Edit ~/.openclaw/monitor/spawn-task.sh. 2. In the TASKEOF delivery instructions, add a verification step before PR creation. 3. This implements the Spotify pre-PR verification pattern.",
-      "spawn_prompt": "Edit `~/.openclaw/monitor/spawn-task.sh` to add a pre-PR self-verification step. In the delivery instructions heredoc (lines 101-125, inside the `cat > \"$WORKTREE/.task-prompt.txt\" <<TASKEOF` block), add a new step between step 2 (Push) and step 3 (Create a PR).\n\nFind the line that says:\n```\n3. **Create a PR** against master using \\`gh pr create\\` with a clear title and description.\n```\n\nInsert before it (making it the new step 3, and renumbering 'Create a PR' to step 4):\n```\n3. **Self-verify before PR creation**: Run \\`git diff --stat origin/master...HEAD\\` and review every file you changed. If you modified files not directly related to the original task above, revert those changes with \\`git checkout origin/master -- <file>\\`. Only create the PR if every changed file directly serves the task requirements.\n```\n\nAcceptance criteria: `spawn-task.sh` still runs without syntax errors (`bash -n ~/.openclaw/monitor/spawn-task.sh` returns 0). The .task-prompt.txt template includes the self-verification step.",
-      "success_metric": "Future spawned tasks include self-verification, reducing scope creep in agent PRs",
-      "issue_url": "https://github.com/patrickkidd/theapp/issues/33",
-      "status": "pending_approval"
-    },
-    {
-      "id": "evolution-2026-03-02-5",
-      "title": "Add queue drain error backoff to prevent infinite retry spam",
+      "title": "Migrate plaintext secrets to openclaw secrets store",
       "category": "infrastructure",
       "effort": "small",
       "confidence": 0.85,
       "repo": "none",
-      "plan": "1. Edit check-agents.py drain_queue(). 2. Track consecutive spawn failures per task in queue entries. 3. After 3 consecutive failures, mark the queue entry as 'blocked' and skip it. 4. Log the block so it's visible in monitor.log. 5. This prevents the current infinite 10-minute retry loop.",
-      "spawn_prompt": "Fix the infinite retry loop in `~/.openclaw/monitor/check-agents.py`'s `drain_queue()` function (line 378). Currently, when `spawn-task.sh` fails (e.g., `tmux: command not found`), the task is re-inserted at the front of the queue and retried every 10 minutes forever.\n\nAdd a `spawn_failures` counter to queue entries. In the failure handling blocks (lines 438-444 and 446-451), increment `entry.setdefault('spawn_failures', 0)` by 1 before re-inserting. Add a check at the top of the spawn logic (after line 405 `entry = queue.pop(0)`) that skips entries with `spawn_failures >= 5`:\n\n```python\n    # Skip entries that have failed too many times\n    if entry.get('spawn_failures', 0) >= 5:\n        log(f\"  BLOCKED: {task_id} has failed to spawn {entry['spawn_failures']} times. Removing from queue.\")\n        # Don't re-insert — just save the updated queue without this entry\n        queue_data['queue'] = queue\n        with open(QUEUE_FILE, 'w') as f:\n            json.dump(queue_data, f, indent=2)\n        return\n```\n\nAlso increment the counter in both error paths:\n```python\n    entry['spawn_failures'] = entry.get('spawn_failures', 0) + 1\n```\n\nAcceptance criteria: `python3 -c \"import check_agents; print('OK')\"` succeeds from `~/.openclaw/monitor/`. After 5 consecutive spawn failures, the task is removed from the queue instead of retrying forever.",
-      "success_metric": "No more infinite retry loops in monitor.log when spawn-task.sh has a systemic error",
-      "issue_url": "https://github.com/patrickkidd/theapp/issues/34",
-      "status": "pending_approval"
+      "plan": "1. Run openclaw secrets audit to identify all plaintext secrets. 2. Run openclaw secrets configure to set up the local secrets store. 3. Move DISCORD_BOT_TOKEN from openclaw.json and config.sh into secrets store. 4. Move WP_APP_PASSWORD and GH_TOKEN into secrets store. 5. Replace plaintext values with $ref references. 6. Run openclaw secrets apply. 7. Verify gateway reconnects to Discord. 8. Verify co-founder lenses still run (test one manually).",
+      "spawn_prompt": "Migrate plaintext secrets in OpenClaw configuration to the new External Secrets Management system (available since v2026.2.26).\n\nContext: We're running OpenClaw v2026.3.1 on a Mac Mini M4. Secrets are currently stored in plaintext in:\n- `~/.openclaw/openclaw.json` — Discord bot token, Anthropic API key, MiniMax API key\n- `~/.openclaw/co-founder/config.sh` — Discord bot token (duplicated), WordPress app password, GitHub token path\n\nSteps:\n1. Run `openclaw secrets audit` to identify all plaintext secrets in the config\n2. Run `openclaw secrets configure` to initialize the secrets store\n3. For each secret identified, run `openclaw secrets set <key> <value>` to store it\n4. Update `~/.openclaw/openclaw.json` to use `$ref` references instead of plaintext values for:\n   - `auth.profiles.anthropic:default.apiKey`\n   - `auth.profiles.minimax:default.apiKey`\n   - `plugins.discord.token`\n5. Update `~/.openclaw/co-founder/config.sh` to source secrets from the store instead of hardcoding:\n   - `DISCORD_BOT_TOKEN` — should use `openclaw secrets get discord-bot-token` or equivalent\n   - `WP_APP_PASSWORD` — should use `openclaw secrets get wp-app-password`\n6. Run `openclaw secrets apply` to activate\n7. Verify the gateway is healthy: `curl -s http://127.0.0.1:18789/health`\n8. Verify Discord connectivity: check that hurin responds in #planning\n\nIMPORTANT: Read the docs first — `openclaw secrets --help` and https://docs.openclaw.ai/gateway/security — to understand the exact CLI syntax before making changes. If the secrets CLI doesn't work as expected, document what you find and stop.\n\nAcceptance criteria:\n1. No plaintext API keys or tokens in `~/.openclaw/openclaw.json`\n2. No plaintext passwords in `~/.openclaw/co-founder/config.sh`\n3. Gateway health check passes\n4. `openclaw secrets audit` shows no plaintext secrets remaining",
+      "success_metric": "Zero plaintext secrets in config files, gateway healthy, Discord connected"
+    },
+    {
+      "id": "evolution-2026-03-02-2",
+      "title": "Add wall-clock timeout to spawned agent tasks",
+      "category": "infrastructure",
+      "effort": "small",
+      "confidence": 0.90,
+      "repo": "none",
+      "plan": "1. Add max_minutes field (default 120) to task registry entries in spawn-task.sh. 2. In check-agents.py monitoring loop, compare task start time + max_minutes against current time. 3. If exceeded and tmux session still alive, kill it and mark as timed_out. 4. Log timeout to monitor.log.",
+      "spawn_prompt": "Add wall-clock timeout enforcement to the agent monitoring system so stuck tasks don't run indefinitely.\n\n**File 1: `~/.openclaw/monitor/spawn-task.sh`**\nWhen registering a task in `active-tasks.json`, add a `maxMinutes` field with default value 120 (2 hours). Find the section where the task JSON object is constructed (look for `jq` commands that build the task entry) and add `\"maxMinutes\": 120` to the object.\n\n**File 2: `~/.openclaw/monitor/check-agents.py`**\nIn the main monitoring loop where tasks are checked:\n1. Read the task's `startedAt` timestamp and `maxMinutes` from the registry\n2. If `maxMinutes` is present and `datetime.now() - startedAt > timedelta(minutes=maxMinutes)`:\n   a. Kill the tmux session: `tmux kill-session -t claude-{task_id}`\n   b. Capture the last 100 lines of output before killing\n   c. Update the task status to `\"timed_out\"` in active-tasks.json\n   d. Log: `f\"Task {task_id} exceeded {max_minutes}min wall-clock limit — killed\"`\n3. If `maxMinutes` is not present in the task entry, skip the timeout check (backward compatible)\n\nAcceptance criteria:\n1. `python3 -c \"import json; d=json.load(open('check-agents.py'.replace('check-agents.py','') + '../workspace-hurin/theapp/.clawdbot/active-tasks.json')); print('OK')\"` — JSON still valid\n2. `python3 -c \"import check_agents; print('import OK')\"` from `~/.openclaw/monitor/` succeeds\n3. `bash -n ~/.openclaw/monitor/spawn-task.sh` returns 0\n4. The timeout check is backward-compatible (tasks without maxMinutes are skipped)\n5. Timed-out tasks get their output captured before the session is killed",
+      "success_metric": "No more silently stuck agent sessions — tasks auto-kill after 2 hours with captured output"
+    },
+    {
+      "id": "evolution-2026-03-02-3",
+      "title": "Include failure context in Ralph Loop respawn prompts",
+      "category": "infrastructure",
+      "effort": "trivial",
+      "confidence": 0.92,
+      "repo": "none",
+      "plan": "1. In check-agents.py, when preparing a respawn, read the failure log file. 2. Append last 50 lines of failure context to the respawn prompt with a PREVIOUS ATTEMPT FAILED section. 3. This gives the new agent knowledge of what went wrong.",
+      "spawn_prompt": "Improve the Ralph Loop in `~/.openclaw/monitor/check-agents.py` so respawned tasks include context from the previous failure.\n\nCurrently, when a task fails and gets respawned, the new agent starts completely fresh — it doesn't know what the previous attempt tried or why it failed. This causes repeated failures.\n\nFind the respawn logic in check-agents.py (look for where `spawn-task.sh` is called for retries, or where `respawnCount` is incremented). Before the respawn call:\n\n1. Read the failure log from `~/.openclaw/monitor/failures/{task_id}.log`\n2. If the file exists and has content (not just a placeholder), extract the last 50 lines\n3. Prepend the following to the spawn prompt:\n```\n## PREVIOUS ATTEMPT FAILED (attempt {respawn_count} of 3)\n\nThe previous agent session failed. Here is the tail of its output:\n\n```\n{last_50_lines}\n```\n\nLearn from this failure. If it hit a specific error, try a different approach. If it got stuck, skip that path.\n```\n\n4. If the failure log is empty or contains only the placeholder text (\"Session was already dead\"), include a note: \"Previous attempt failed but no diagnostic output was captured. Proceed carefully and log your reasoning.\"\n\nAcceptance criteria:\n1. `python3 -c \"import check_agents; print('import OK')\"` from `~/.openclaw/monitor/` succeeds\n2. The respawn prompt includes failure context when available\n3. The respawn prompt includes a warning when no failure context is available\n4. No other functions are modified beyond the respawn logic",
+      "success_metric": "Respawned agents learn from previous failures — reduced repeat failures, higher respawn success rate"
     }
   ]
 }
