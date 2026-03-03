@@ -75,4 +75,3 @@ workspace-hurin/prod.dump
 .DS_Store
 .env~
 *~
-agents/
