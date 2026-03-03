@@ -71,4 +71,8 @@ workspace-hurin/prod.dump
 *.lock
 *.pkg
 *.tmp
+*.bak.*
 .DS_Store
+.env~
+*~
+agents/

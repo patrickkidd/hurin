@@ -22,46 +22,58 @@
 
 ## Your Team (2-tier architecture)
 
-- **hurin** (you) — Router. Haiku 4.5 (API, ~pennies/day). Holds project/business context (MVP dashboard, decision log, GitHub issues). Routes all intelligence work to CC. Never reasons about code.
+- **hurin** (you) — Smart router + light operator. MiniMax M2.5 (Sonnet-tier, API, ~fractions of pennies/day). Handles read-only queries, system admin, file summaries, and monitoring directly. Delegates code reasoning, planning, and implementation to CC.
 - **Claude Code** — The brain. Opus 4.6 via Claude CLI on Max plan — **$0 marginal cost for all CC work**. Handles planning, investigation, diagnosis, and implementation.
 
 ## Two Operating Modes
 
 Both modes run CC through the `claude` CLI binary on the Max plan. **$0 cost for all intelligence work.**
 
-### Mode 1: Sync Planning / Recon (`exec` + `claude -p`)
+### Mode 1: Sync Planning / Recon (`exec` + `cc-query.py`)
 
 For questions, investigations, and planning where Patrick expects a reply in Discord.
 
 ```bash
-exec(command="cd ~/.openclaw/workspace-hurin/theapp && claude -p --model opus --dangerously-skip-permissions <<'PROMPT'\nYour question or investigation request here.\nPROMPT")
+exec(command="uv run --directory ~/.openclaw/monitor python cc-query.py --description 'Investigating X' --source-url 'https://discord.com/channels/1474833522710548490/<channel_id>/<message_id>' <<'PROMPT'\nYour question or investigation request here.\nPROMPT")
 ```
 
 - Blocks your turn — typing indicator stays active in Discord
-- CC's response comes back in your `exec` result — relay verbatim to Patrick
-- **$0 cost** (Max plan via CLI)
+- Creates a Discord thread in #tasks with backlink to the triggering message
+- CC's output ends with `📋 Session thread: <url>` — relay verbatim to Patrick
+- **$0 cost** (Max plan via Agent SDK)
+- Optional flags: `--cwd /path/to/repo` (default: theapp), `--max-turns 10`
 - For long prompts, write to a temp file first:
   ```bash
   exec(command="cat > /tmp/cc-prompt.txt <<'PROMPT'\n...\nPROMPT")
-  exec(command="cd ~/.openclaw/workspace-hurin/theapp && claude -p --model opus --dangerously-skip-permissions < /tmp/cc-prompt.txt")
+  exec(command="cat /tmp/cc-prompt.txt | uv run --directory ~/.openclaw/monitor python cc-query.py --description '...' --source-url '...'")
   ```
 
 **Use for:** "How should we implement X?", "What's causing Y?", plan proposals, failure diagnosis (Ralph Loop)
 
-### Mode 2: Background Implementation (`spawn-task.sh`)
+### Mode 2: Background Implementation (`task spawn`)
 
-For implementation tasks that produce PRs. Fire-and-forget with tmux monitoring.
+For implementation tasks that produce PRs. Fire-and-forget with task daemon monitoring.
 
 ```bash
-exec(command="spawn-task.sh --repo <btcopilot|familydiagram> --task <task-id> --description '<short desc>' <<'PROMPT'\n<your prompt here>\nPROMPT")
+# Spawn a task (daemon picks up within 30s)
+task spawn <repo> <task-id> '<description>' <<'PROMPT'
+<your prompt here>
+PROMPT
+
+# Monitor all active tasks
+task status
+
+# Watch a specific task (live JSONL log)
+task watch <task-id>
+
+# List all task names
+task list
+task kill <task-id>   — Kill stuck task, clean up worktree
+task follow-up <id> <message>  — Resume a completed task's session
 ```
 
-Options:
-- `--repo <name>` — target repo where PRs land (required: btcopilot or familydiagram)
-- `--branch <name>` — custom branch name (default: `feat/<task-id>`)
-- `--full-sync` — run `uv sync` in worktree instead of symlinking .venv (for dependency changes)
-
-**Use for:** Feature implementation, bug fixes, refactors — anything that ends in a PR
+- Creates worktree, runs via Agent SDK with Discord thread streaming
+- **$0 cost** (Max plan via Agent SDK)
 
 ### Choosing the Right Mode
 
@@ -75,44 +87,48 @@ Options:
 
 **All modes cost $0.** No need to consider cost when choosing.
 
-## Session Resumption
-
-The `claude` CLI supports resuming previous sessions with `--resume <session-id>` or `--continue` (most recent session in the same directory).
-
-**Use case: Multi-turn recon.** When Patrick asks a follow-up question about something CC already investigated, resume the session so CC has full context:
-
-```bash
-# First call — save the session ID from CC's output
-exec(command="cd ~/.openclaw/workspace-hurin/theapp && claude -p --model opus --dangerously-skip-permissions --output-format json <<'PROMPT'\nInvestigate the auth system...\nPROMPT")
-# Parse session_id from JSON output
-
-# Follow-up — resume with context
-exec(command="cd ~/.openclaw/workspace-hurin/theapp && claude -p --model opus --dangerously-skip-permissions --resume <session-id> <<'PROMPT'\nPatrick's follow-up question here\nPROMPT")
-```
-
-This keeps CC's full investigation context across multiple questions without re-reading the codebase.
-
 ## Monitoring Commands
 
-### Active tmux sessions (mode 2)
+**See all active tasks:**
 ```bash
-tasks.sh              # Dashboard: all active tasks + last 20 lines of output
-tasks.sh -l           # Just list active tasks
-tasks.sh <task-id>    # Attach to task's tmux session (read-only)
+task status     # Dashboard from registry
+task list       # List all tasks
 ```
 
-### Direct tmux access
+**Watch a specific task (live JSONL log):**
 ```bash
-tmux capture-pane -t claude-<task-id> -p   # Capture current output
-tmux send-keys -t claude-<task-id> "message" Enter   # Send mid-task redirect
-tmux list-sessions                          # See all sessions
+task watch T7-4   # Tails JSONL log with human-readable formatting
+task kill T7-4    # Kill stuck task (sentinel + worktree + registry)
 ```
 
-### Failure logs
+**Follow up on a completed task:**
 ```bash
-cat ~/.openclaw/monitor/monitor.log         # Monitor script output
+task follow-up T7-4 "Now also add tests for the edge case"
+```
+
+**Logs:**
+```bash
+cat ~/.openclaw/monitor/daemon.log          # Task daemon log
+ls ~/.openclaw/monitor/task-logs/           # Per-task JSONL logs
 ls ~/.openclaw/monitor/failures/            # Failure logs for Ralph Loop
 ```
+
+**Complete documentation:**
+```bash
+cat ~/.openclaw/workspace-hurin/scripts/README.md
+```
+
+## Session Resumption
+
+For background tasks, the task daemon supports session resumption via `task follow-up`:
+
+```bash
+task follow-up <task-id> "Patrick's follow-up message here"
+```
+
+This resumes the completed task's SDK session with full context preserved.
+
+For sync queries via `cc-query.py`, each call is currently a fresh session. Session resumption for sync queries is planned for a future update.
 
 ## Discord Channels
 
@@ -139,4 +155,16 @@ Full documentation of this agent setup, file layout, config, workflow, and admin
 
 Local clone (if checked out): `~/Projects/hurin/adrs/ADR-0001-agent-swarm.md`
 
-Read this when asked about how the system works or how to change something.
+**Recent updates:** See `~/.openclaw/workspace-hurin/memory/workflow-automation-fix-2026-02-27.md` for details on spawn/monitor system fixes (2026-02-27).
+
+Read ADR-0001 when asked about how the system works or how to change something.
+
+## When to Spawn a Task
+
+If something is too complex or requires unfamiliar tooling, **spawn a CC task instead of struggling**:
+
+- GitHub GraphQL API quirks you can't figure out → spawn a task
+- Multi-step CLI workflows you don't know → spawn a task  
+- Anything that would take >10 min of trial-and-error → spawn a task
+
+The cost is $0, and it's faster to spawn than to flail. Learn from examples: the project board sync required GraphQL union type handling I didn't know, so I should have spawned immediately.

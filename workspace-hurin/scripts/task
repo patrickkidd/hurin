@@ -1,0 +1,413 @@
+#!/bin/bash
+# task — Unified entry point for task workflow (v2: daemon-backed)
+#
+# The daemon (task-daemon.py) picks up tasks from the queue within ~30s.
+# No more tmux, no more cron polling.
+#
+# Usage:
+#   task spawn <btcopilot|familydiagram> <task-id> '<description>' [--issue <#>] <<'PROMPT'
+#     ...prompt...
+#   PROMPT
+#
+#   task status [task-id]        — Show task status (all if no ID)
+#   task watch <task-id>         — Tail the task log (live output)
+#   task attach <task-id>        — (deprecated) Redirects to watch
+#   task list                    — List active and queued tasks
+#   task kill <task-id>          — Signal daemon to kill running task
+#   task follow-up <task-id> <message> — Resume a completed task's session
+#   task sync <repo> <issue-#> [--status <status>] [--owner <owner>]  — Sync project board
+
+set -euo pipefail
+
+SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SYNC_PROJECT="$SCRIPTS_DIR/sync-project.sh"
+
+MONITOR_DIR="$HOME/.openclaw/monitor"
+QUEUE_FILE="$MONITOR_DIR/task-queue.json"
+QUEUE_PROMPTS="$MONITOR_DIR/queue-prompts"
+REGISTRY="$HOME/.openclaw/workspace-hurin/theapp/.clawdbot/active-tasks.json"
+KILL_DIR="$MONITOR_DIR/kill-sentinels"
+TASK_LOGS="$MONITOR_DIR/task-logs"
+
+usage() {
+    cat >&2 <<'USAGE'
+Usage:
+  task spawn <repo> <task-id> '<desc>' [--issue <#>] <<PROMPT
+  task status [task-id]
+  task watch <task-id>
+  task list
+  task kill <task-id>
+  task follow-up <task-id> <message>
+  task sync <repo> <issue-#> [--status <status>] [--owner <owner>]
+  task help
+
+Examples:
+  # Spawn (daemon picks up in ≤30s)
+  task spawn familydiagram T7-4 'Build diagram button' --issue 156 <<'PROMPT'
+  Implement the button...
+  PROMPT
+
+  # Watch live output
+  task watch T7-4
+
+  # Kill a running task
+  task kill T7-4
+
+  # Resume a completed task with follow-up
+  task follow-up T7-8 "The people F1 improved but events dropped."
+USAGE
+    exit 1
+}
+
+_ensure_queue() {
+    mkdir -p "$QUEUE_PROMPTS"
+    if [[ ! -f "$QUEUE_FILE" ]]; then
+        echo '{"queue":[]}' > "$QUEUE_FILE"
+    fi
+}
+
+_enqueue() {
+    local task_id="$1" repo="$2" description="$3" prompt="$4" issue_number="${5:-}"
+
+    _ensure_queue
+
+    # Write prompt to file
+    echo "$prompt" > "$QUEUE_PROMPTS/${task_id}.txt"
+
+    # Append to queue
+    local entry
+    entry="$(jq -n \
+        --arg tid "$task_id" \
+        --arg repo "$repo" \
+        --arg desc "$description" \
+        --arg pf "$QUEUE_PROMPTS/${task_id}.txt" \
+        --arg issue "$issue_number" \
+        --arg ts "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+        '{task_id: $tid, repo: $repo, description: $desc, prompt_file: $pf, issue_number: $issue, queued_at: $ts}')"
+
+    local tmp="${QUEUE_FILE}.tmp.$$"
+    jq --argjson entry "$entry" '.queue += [$entry]' "$QUEUE_FILE" > "$tmp" && mv "$tmp" "$QUEUE_FILE"
+
+    local pos
+    pos="$(jq '.queue | length' "$QUEUE_FILE")"
+    echo "$pos"
+}
+
+[[ $# -lt 1 ]] && usage
+
+case "$1" in
+    spawn)
+        [[ $# -lt 4 ]] && { echo "Error: spawn requires <repo> <task-id> '<desc>'" >&2; usage; }
+        REPO="$2"
+        TASK_ID="$3"
+        DESC="$4"
+        shift 4
+
+        [[ "$REPO" != "btcopilot" && "$REPO" != "familydiagram" ]] && {
+            echo "Error: repo must be btcopilot or familydiagram" >&2
+            exit 1
+        }
+
+        ISSUE=""
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                --issue) ISSUE="$2"; shift 2 ;;
+                *) echo "Unknown option: $1" >&2; exit 1 ;;
+            esac
+        done
+
+        PROMPT=$(cat)
+        [[ -z "$PROMPT" ]] && { echo "Error: No prompt provided on stdin" >&2; exit 1; }
+
+        POS="$(_enqueue "$TASK_ID" "$REPO" "$DESC" "$PROMPT" "$ISSUE")"
+
+        echo ""
+        echo "✓ Task $TASK_ID enqueued (position $POS)"
+        echo "  Repo:     $REPO"
+        echo "  Daemon picks up in ≤30s"
+        echo ""
+        echo "💡 Watch with:  task watch $TASK_ID"
+        ;;
+
+    status|st)
+        if [[ $# -eq 2 ]]; then
+            # Show specific task
+            TASK_ID="$2"
+            if [[ ! -f "$REGISTRY" ]]; then
+                echo "No task registry found." >&2
+                exit 1
+            fi
+            TASK="$(jq -r --arg id "$TASK_ID" '.tasks[] | select(.id == $id)' "$REGISTRY")"
+            if [[ -z "$TASK" ]]; then
+                echo "Task not found: $TASK_ID" >&2
+                exit 1
+            fi
+            echo "$TASK" | jq .
+
+            # Show last few lines of log
+            LOG_FILE="$TASK_LOGS/${TASK_ID}.log"
+            if [[ -f "$LOG_FILE" ]]; then
+                echo ""
+                echo "--- Last 10 log lines ---"
+                tail -10 "$LOG_FILE" | python3 -u -c "
+import sys, json
+for line in sys.stdin:
+    line = line.rstrip()
+    if not line: continue
+    try:
+        ev = json.loads(line)
+        t = ev.get('type', '')
+        if t == 'assistant':
+            for b in ev.get('message', {}).get('content', []):
+                if b.get('type') == 'text':
+                    print(b['text'][:200])
+        elif t == 'meta':
+            print(f\"[{ev.get('key', '')}] {ev.get('value', '')}\")
+        elif t == 'error':
+            print(f\"ERROR: {ev.get('message', '')}\")
+    except:
+        print(line[:200])
+"
+            fi
+        else
+            # Show all tasks summary
+            if [[ ! -f "$REGISTRY" ]]; then
+                echo "No task registry found."
+            else
+                echo "=== Active Tasks ==="
+                jq -r '.tasks[] | select(.status == "running" or .status == "pr_open" or .status == "respawn_pending") | "  \(.id)  \(.status)  \(.repo)  \(.description // "")"' "$REGISTRY" 2>/dev/null || echo "  (none)"
+
+                echo ""
+                echo "=== Queued ==="
+                if [[ -f "$QUEUE_FILE" ]]; then
+                    jq -r '.queue[] | "  \(.task_id)  \(.repo)  \(.description // "")"' "$QUEUE_FILE" 2>/dev/null || echo "  (none)"
+                else
+                    echo "  (none)"
+                fi
+
+                echo ""
+                echo "=== Recent Completed ==="
+                jq -r '.tasks[] | select(.status == "done" or .status == "failed") | "  \(.id)  \(.status)  \(.repo)  \(.prUrl // "no PR")"' "$REGISTRY" 2>/dev/null | tail -10 || echo "  (none)"
+            fi
+        fi
+        ;;
+
+    watch|w)
+        [[ $# -lt 2 ]] && { echo "Error: watch requires <task-id>" >&2; exit 1; }
+        TASK_LOG="$TASK_LOGS/$2.log"
+        if [[ ! -f "$TASK_LOG" ]]; then
+            echo "No log file found for task '$2' at $TASK_LOG" >&2
+            echo "(Daemon may not have started this task yet. Waiting...)" >&2
+            # Wait for the log file to appear
+            for i in $(seq 1 60); do
+                [[ -f "$TASK_LOG" ]] && break
+                sleep 1
+            done
+            if [[ ! -f "$TASK_LOG" ]]; then
+                echo "Timed out waiting for log file." >&2
+                exit 1
+            fi
+        fi
+        echo "Watching $2 (Ctrl-C to stop)..."
+        echo ""
+        tail -f "$TASK_LOG" | python3 -u -c "
+import sys, json
+
+for line in sys.stdin:
+    line = line.rstrip()
+    if not line:
+        continue
+    # Pass through non-JSON lines
+    if line.startswith('['):
+        print(line, flush=True)
+        continue
+    try:
+        ev = json.loads(line)
+    except (json.JSONDecodeError, ValueError):
+        print(line, flush=True)
+        continue
+    t = ev.get('type', '')
+    if t == 'assistant':
+        msg = ev.get('message', {})
+        for block in msg.get('content', []):
+            if block.get('type') == 'text':
+                print(block['text'], flush=True)
+            elif block.get('type') == 'tool_use':
+                name = block.get('name', '?')
+                inp = block.get('input', {})
+                if name == 'Bash':
+                    print(f'  \$ {inp.get(\"command\", \"\")}', flush=True)
+                elif name == 'Read':
+                    print(f'  [read] {inp.get(\"file_path\", \"\")}', flush=True)
+                elif name == 'Edit':
+                    print(f'  [edit] {inp.get(\"file_path\", \"\")}', flush=True)
+                elif name == 'Write':
+                    print(f'  [write] {inp.get(\"file_path\", \"\")}', flush=True)
+                elif name in ('Grep', 'Glob'):
+                    print(f'  [{name.lower()}] {inp.get(\"pattern\", \"\")}', flush=True)
+                else:
+                    print(f'  [{name}]', flush=True)
+    elif t == 'result':
+        result = ev.get('result', '')
+        sid = ev.get('session_id', '')
+        if result:
+            print(f'\n--- Result ---', flush=True)
+            print(result, flush=True)
+        if sid:
+            print(f'Session: {sid}', flush=True)
+    elif t == 'meta':
+        key = ev.get('key', '')
+        val = ev.get('value', '')
+        print(f'[{key}] {val}', flush=True)
+    elif t == 'error':
+        print(f'ERROR: {ev.get(\"error_type\", \"\")} — {ev.get(\"message\", \"\")}', flush=True)
+"
+        ;;
+
+    attach|a)
+        echo "Note: 'attach' is deprecated (no more tmux). Redirecting to 'watch'." >&2
+        [[ $# -lt 2 ]] && { echo "Error: requires <task-id>" >&2; exit 1; }
+        exec "$0" watch "$2"
+        ;;
+
+    list|ls)
+        echo "=== Queued Tasks ==="
+        if [[ -f "$QUEUE_FILE" ]]; then
+            jq -r '.queue[] | "  [\(.queued_at // "?")] \(.task_id)  \(.repo)  \(.description // "")"' "$QUEUE_FILE" 2>/dev/null || echo "  (empty)"
+        else
+            echo "  (no queue file)"
+        fi
+
+        echo ""
+        echo "=== Running ==="
+        if [[ -f "$REGISTRY" ]]; then
+            jq -r '.tasks[] | select(.status == "running") | "  \(.id)  \(.repo)  \(.description // "")"' "$REGISTRY" 2>/dev/null || echo "  (none)"
+        fi
+
+        echo ""
+        echo "=== PR Open ==="
+        if [[ -f "$REGISTRY" ]]; then
+            jq -r '.tasks[] | select(.status == "pr_open") | "  \(.id)  \(.prUrl // "no URL")  \(.description // "")"' "$REGISTRY" 2>/dev/null || echo "  (none)"
+        fi
+        ;;
+
+    kill)
+        [[ $# -lt 2 ]] && { echo "Error: kill requires <task-id>" >&2; exit 1; }
+        TASK_ID="$2"
+        mkdir -p "$KILL_DIR"
+        touch "$KILL_DIR/${TASK_ID}.kill"
+        echo "Kill sentinel written for $TASK_ID"
+        echo "Daemon will terminate the task within seconds."
+        ;;
+
+    follow-up|followup|fu)
+        [[ $# -lt 3 ]] && { echo "Error: follow-up requires <task-id> <message>" >&2; exit 1; }
+        TASK_ID="$2"
+        shift 2
+        MESSAGE="$*"
+
+        # Look up session_id from registry
+        if [[ ! -f "$REGISTRY" ]]; then
+            echo "Error: No task registry found." >&2
+            exit 1
+        fi
+
+        SESSION_ID="$(jq -r --arg id "$TASK_ID" '.tasks[] | select(.id == $id) | .session_id // empty' "$REGISTRY")"
+        REPO="$(jq -r --arg id "$TASK_ID" '.tasks[] | select(.id == $id) | .repo // empty' "$REGISTRY")"
+        DESC="$(jq -r --arg id "$TASK_ID" '.tasks[] | select(.id == $id) | .description // empty' "$REGISTRY")"
+        BRANCH="$(jq -r --arg id "$TASK_ID" '.tasks[] | select(.id == $id) | .branch // empty' "$REGISTRY")"
+        WORKTREE="$(jq -r --arg id "$TASK_ID" '.tasks[] | select(.id == $id) | .worktree // empty' "$REGISTRY")"
+        ISSUE="$(jq -r --arg id "$TASK_ID" '.tasks[] | select(.id == $id) | .issueNumber // empty' "$REGISTRY")"
+
+        if [[ -z "$SESSION_ID" ]]; then
+            echo "Error: No session_id found for $TASK_ID (task may not have been run by daemon)." >&2
+            exit 1
+        fi
+
+        if [[ -z "$REPO" ]]; then
+            echo "Error: Task $TASK_ID not found in registry." >&2
+            exit 1
+        fi
+
+        # Enqueue a resume-task
+        _ensure_queue
+
+        # Write a special queue entry with session_id and follow-up prompt
+        local_entry="$(jq -n \
+            --arg tid "$TASK_ID" \
+            --arg repo "$REPO" \
+            --arg desc "[follow-up] $DESC" \
+            --arg pf "" \
+            --arg issue "${ISSUE:-}" \
+            --arg ts "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+            --arg sid "$SESSION_ID" \
+            --arg fup "$MESSAGE" \
+            --arg branch "$BRANCH" \
+            --arg wt "$WORKTREE" \
+            '{task_id: $tid, repo: $repo, description: $desc, prompt_file: $pf, issue_number: $issue, queued_at: $ts, session_id: $sid, follow_up_prompt: $fup, branch: $branch, worktree: $wt}')"
+
+        local_tmp="${QUEUE_FILE}.tmp.$$"
+        jq --argjson entry "$local_entry" '.queue += [$entry]' "$QUEUE_FILE" > "$local_tmp" && mv "$local_tmp" "$QUEUE_FILE"
+
+        POS="$(jq '.queue | length' "$QUEUE_FILE")"
+        echo ""
+        echo "✓ Follow-up for $TASK_ID enqueued (position $POS)"
+        echo "  Session: $SESSION_ID"
+        echo "  Message: $MESSAGE"
+        echo "  Daemon picks up in ≤30s"
+        echo ""
+        echo "💡 Watch with:  task watch $TASK_ID"
+        ;;
+
+    sync)
+        [[ $# -lt 3 ]] && { echo "Error: sync requires <repo> <issue-#>" >&2; exit 1; }
+        REPO="$2"
+        ISSUE="$3"
+        shift 3
+        "$SYNC_PROJECT" "$REPO" "$ISSUE" "$@"
+        ;;
+
+    help|h|-h|--help)
+        cat <<'HELP'
+task — Task workflow helper (v2: daemon-backed)
+
+Unified entry point for spawning, monitoring, and managing Claude Code tasks.
+Tasks are executed by task-daemon.py (LaunchAgent), not tmux.
+
+COMMANDS:
+  spawn <repo> <task-id> '<desc>' [--issue <#>]  — Enqueue a task (daemon runs it)
+  status [task-id]                                — Show task status
+  watch <task-id>                                 — Tail task log (live output)
+  list                                            — List queued + active tasks
+  kill <task-id>                                  — Signal daemon to kill a task
+  follow-up <task-id> <message>                   — Resume a task's session
+  sync <repo> <issue-#> [--status <s>] [--owner <o>] — Sync project board
+  help                                            — This message
+
+EXAMPLES:
+
+  # Spawn (daemon picks up ≤30s)
+  task spawn familydiagram T7-4 'Build diagram button' --issue 156 <<'PROMPT'
+  Implement the 'Build my diagram' button.
+  Done = button works, tests pass, PR with screenshot.
+  PROMPT
+
+  # Monitor tasks
+  task status        # Dashboard of all tasks
+  task status T7-4   # Just one task
+  task watch T7-4    # Tail log live
+
+  # Kill a running task
+  task kill T7-4
+
+  # Follow up on a completed task
+  task follow-up T7-8 "Events dropped. Try keeping extraction prompt unchanged."
+HELP
+        exit 0
+        ;;
+
+    *)
+        echo "Unknown command: $1" >&2
+        usage
+        ;;
+esac

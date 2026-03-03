@@ -1,0 +1,61 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║         GitHub Project Board Sync — Quick Reference                        ║
+║                   February 28, 2026                                        ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+┌─ BEFORE (Manual, 2 steps)
+│
+│ task spawn familydiagram T7-4 'Build button' <<'PROMPT'
+│ Implement the button...
+│ PROMPT
+│
+│ gh-project-find-item.sh patrickkidd/familydiagram 156
+│ gh-project-sync.sh <item-id> --status "In Progress" --owner Hurin
+│
+└─
+
+┌─ AFTER (Automatic, 1 step)
+│
+│ task spawn familydiagram T7-4 'Build button' --issue 156 <<'PROMPT'
+│ Implement the button...
+│ PROMPT
+│
+└─ PROJECT BOARD AUTOMATICALLY SYNCED to "In Progress" (owner: Hurin) ✓
+
+═══════════════════════════════════════════════════════════════════════════════
+
+COMMONLY USED COMMANDS:
+
+  # Spawn with automatic project sync
+  task spawn <repo> <id> '<desc>' --issue <#> <<'PROMPT'
+  
+  # Manual project board sync
+  task sync patrickkidd/<repo> <issue-#> --status Done
+  task sync patrickkidd/<repo> <issue-#> --owner Hurin
+  
+  # Monitor task
+  task watch <task-id>
+  task status
+
+═══════════════════════════════════════════════════════════════════════════════
+
+NEW SCRIPTS:
+
+  spawn-task-with-project.sh  — Spawn task + auto-sync project board
+  sync-project.sh             — Manual project board sync helper
+  
+ENHANCED SCRIPTS:
+
+  task                        — Added --issue flag and sync command
+  check-agents.py             — Ready for auto-sync when PR found
+
+═══════════════════════════════════════════════════════════════════════════════
+
+BENEFIT:
+  Eliminates 2 manual commands per task spawn
+  Keeps project board automatically in sync
+  Backward compatible with existing spawn-task.sh
+
+For full details, see: ~/.openclaw/workspace-hurin/scripts/README.md
+
+═══════════════════════════════════════════════════════════════════════════════
