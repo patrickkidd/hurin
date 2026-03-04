@@ -154,7 +154,7 @@ Handled entirely in the metrics engine (no AI). Each anomaly type has a 6h coold
 
 ### Synthesis (Agent SDK, Hourly)
 
-Uses `claude-agent-sdk` `query()` with 3-turn budget:
+Uses `claude-agent-sdk` `query()` with Sonnet 4.6 (`claude-sonnet-4-6`) and a 3-turn budget:
 
 1. **Turn 1:** Digest metrics + events
 2. **Turn 2:** Assess goal risk, identify velocity opportunities
@@ -200,7 +200,7 @@ Shares `~/.openclaw/monitor/.venv`. No new dependencies beyond what the task dae
 1. **GitHub setup** — Create milestones for 3 goals. Add `Goal` field to Project #4. Tag existing issues with milestones + Goal field. Add effort labels.
 2. **Data layer** — GitHub reader (milestones, project items, PRs, CI). Registry reader. Event file watcher for `task-events.jsonl`.
 3. **Metrics engine** — Fuzzy completion %, velocity, anomaly detection, JSONL logging.
-4. **Synthesis engine** — Agent SDK `query()`. Prompt design. Dedup. Discord posting to #planning.
+4. **Synthesis engine** — Agent SDK `query()` with Sonnet 4.6. Prompt design. Dedup. Discord posting to #ops.
 5. **Auto-spawn pipeline** — GH issue creation, project sync, task-queue enqueue, Discord thread linking.
 6. **LaunchAgent + morning brief** — plist, business hours gating, morning brief, lens prompt rewrite for project-pulse specialization.
 

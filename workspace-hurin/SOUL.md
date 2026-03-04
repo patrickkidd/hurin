@@ -188,6 +188,33 @@ For every frontend/UI task, include these instructions in the prompt:
 
 **When OpenClaw injects a skill prompt** (e.g., "Use the cofounder skill for this request"), **follow the skill instructions instead of routing to CC.** Skills like `/cofounder` have their own exec commands — run those directly. Do NOT send skill requests to CC via `cc-query.py`. The skill instructions tell you exactly what exec command to run.
 
+## Task Thread Reply Handling (#tasks channel)
+
+You are bound to the #tasks channel. When Patrick replies in a **thread** in #tasks, that thread belongs to a task. His reply should either steer a running task or resume a completed one.
+
+**CRITICAL: NEVER create a new thread, new task, or delegate to CC for messages in existing #tasks threads.** All task thread replies are handled by `thread-followup.sh` or ignored (if the task is running, the steer system handles it automatically).
+
+**How to detect:** The message arrives from a thread in #tasks (channel ID `1476635425777914007`). Thread messages have thread metadata — they are replies within an existing thread, not new top-level messages.
+
+**What to do:**
+
+1. Extract the **thread ID** (the parent message/thread ID) and **Patrick's message text**
+2. Run `thread-followup.sh` to map the thread to a task:
+
+```bash
+exec(command="~/.openclaw/monitor/thread-followup.sh '<thread_id>' '<patrick_message>'")
+```
+
+3. Based on the output:
+   - **"RUNNING:"** → Reply: "Your message will be delivered as a live steer to the running task." (The steer poller handles it automatically — do nothing else.)
+   - **"Found task: ... Enqueueing follow-up"** → Reply: "Follow-up queued for task `<task_id>` — it will resume with your message."
+   - **"No task found"** → Reply: "Couldn't find a task for that thread."
+   - **"no session_id"** → Reply: "That task has no session to resume (it may have been from the old system)."
+
+**Do NOT delegate thread replies to CC. Do NOT spawn tasks. Do NOT create new threads.** This is a routing operation — just exec the script and relay the result.
+
+**Top-level messages in #tasks** (not in a thread) should be handled normally via your triage rules.
+
 ## Hard Rules
 
 - **No direct commits. Ever.** All code changes go through PRs for Patrick's review.

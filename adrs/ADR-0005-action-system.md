@@ -48,7 +48,7 @@ When a briefing identifies genuine quick wins, it ends with a `proposed-actions`
 
 All actions require Patrick's approval. There is no auto-spawn tier.
 
-- `/cofounder approve <id>` — spawns via spawn-task.sh, PR created
+- `/cofounder approve <id>` — enqueues to task-queue.json (daemon picks up ≤30s), PR created
 - `/cofounder refine <id> <feedback>` — iterates on the plan before approving
 - `/cofounder actions` — lists pending items
 
@@ -61,7 +61,7 @@ All actions require Patrick's approval. There is no auto-spawn tier.
 
 ### Approval Flow
 
-1. **Approve:** `/cofounder approve <id>` → spawns via spawn-task.sh, updates issue
+1. **Approve:** `/cofounder approve <id>` → enqueues to task-queue.json (daemon spawns), updates issue
 2. **Refine:** `/cofounder refine <id> <feedback>` → resumes CC session, revises action, updates issue
 3. **List:** `/cofounder actions` → shows pending actions
 
@@ -87,7 +87,7 @@ co-founder.sh runs a lens
                     │     ├── revenue category → #quick-wins
                     │     └── other category → #co-founder
                     └── All actions → await /cofounder approve
-                          ├── /cofounder approve → action-approve.sh → spawn-task.sh
+                          ├── /cofounder approve → action-approve.sh → task-queue.json → task-daemon.py
                           └── /cofounder refine → action-refine.sh → resume CC session
 ```
 
@@ -133,7 +133,7 @@ The following labels are used on GitHub Issues:
 1. Modify `action-router.sh` channel selection logic
 2. Update this ADR's routing table
 
-### Add a new action target (beyond spawn-task.sh)
+### Add a new action target (beyond task-queue.json)
 1. Add handling in `action-router.sh` for the new target
 2. Update this ADR
 
@@ -163,4 +163,4 @@ The following labels are used on GitHub Issues:
 ## Related
 
 - [ADR-0004: Co-Founder System](ADR-0004-co-founder-system.md) — parent system
-- [ADR-0001: Agent Swarm Setup](ADR-0001-agent-swarm.md) — spawn-task.sh infrastructure
+- [ADR-0001: Agent Swarm Setup](ADR-0001-agent-swarm.md) — task daemon infrastructure

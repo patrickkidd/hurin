@@ -153,6 +153,9 @@ async def run_query(prompt: str, args) -> int:
                     )
                 )
 
+            # Post prompt to Discord thread for visibility
+            relay.post_prompt(prompt, label="Query Prompt")
+
             # Send initial prompt
             await client.query(prompt)
 

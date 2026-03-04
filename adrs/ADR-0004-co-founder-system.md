@@ -20,7 +20,7 @@ A scheduled "co-founder" system that runs Claude Code through different strategi
 cron (9 schedules) or /cofounder skill (on-demand)
   └── co-founder.sh <lens-name>
         ├── Read lens prompt from lenses/<name>.md
-        ├── Read last 150 lines of journal.md (memory)
+        ├── Read last 100 lines of journal.md (memory)
         ├── Assemble prompt → /tmp/co-founder-prompt.txt
         ├── claude -p --model opus --max-turns 10 --output-format json  ($0)
         │     └── CC uses multiple turns: gather data → dig deeper → synthesize
@@ -28,7 +28,9 @@ cron (9 schedules) or /cofounder skill (on-demand)
         ├── Save session ID to sessions/<lens>-session.txt (for follow-up)
         ├── Save full briefing to briefings/<lens>-<date>.md
         ├── Append output to journal.md (capped at 1000 lines)
-        └── discord-post.sh → #co-founder channel (split at 1900 chars)
+        ├── extract-actions-json.py → parse actions from output
+        ├── discord-post.sh → #co-founder channel (split at 1900 chars)
+        └── git add + commit + push briefings and actions to repo
 ```
 
 Runs from cron (scheduled) or on-demand via `/cofounder <lens>` skill in Discord. $0 total cost.
@@ -64,7 +66,7 @@ The `/cofounder` OpenClaw skill allows Patrick to run any lens on demand:
 
 | Time (AKST) | Days | Lens | Focus |
 |-------------|------|------|-------|
-| 6:00 AM | Mon-Fri | project-pulse | MVP progress, blockers, priorities |
+| 6:00 AM | Mon, Thu | project-pulse | MVP progress, blockers, priorities |
 | 2:00 PM | Mon, Thu | wild-ideas | Creative brainstorming, no filter |
 | 2:00 PM | Tue, Fri | architecture | Tech debt, patterns, risks |
 | 1:00 PM | Wed | product-vision | User experience, product direction |
@@ -73,13 +75,13 @@ The `/cofounder` OpenClaw skill allows Patrick to run any lens on demand:
 | 11:00 AM | Sat | process-retro | Dev process efficiency, time allocation |
 | 10:00 AM | Sun | website-audit | alaskafamilysystems.com conversion/UX/SEO |
 | 10:01 AM | 1st & 15th | training-programs | Free license programs, renewals, outreach |
-| 8:00 AM | Daily | evolution | External intelligence: agent patterns, OpenClaw, AI co-founder techniques |
+| 8:00 AM | (paused) | evolution | External intelligence: agent patterns, OpenClaw, AI co-founder techniques |
 
 ### Journal Memory Model
 
 - `journal.md` is append-only, capped at 1000 lines
 - Each entry has a timestamp and lens name header
-- CC reads the last 150 lines before each run for continuity
+- CC reads the last 100 lines before each run for continuity
 - CC is instructed to reference its own past observations and build on them
 - Trimming removes oldest entries when cap is exceeded
 - Full briefings are also saved to `briefings/<lens>-<date>.md` (not trimmed)
@@ -108,6 +110,7 @@ Each briefing may also produce structured action items (most don't — by design
 ~/.openclaw/co-founder/
   config.sh              # Paths, channel ID, Discord token, depth settings
   co-founder.sh          # Main runner script (agentic, multi-turn)
+  extract-actions-json.py # Parse proposed-actions JSON from briefing output
   discord-post.sh        # Discord API posting with message splitting
   action-router.sh       # Routes actions: GitHub Issues + Discord + spawning
   action-approve.sh      # Approves and spawns propose-tier actions

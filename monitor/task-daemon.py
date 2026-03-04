@@ -706,8 +706,19 @@ async def run_task(entry, is_respawn=False, respawn_context=""):
                     )
                 )
 
+            # Post prompt to Discord thread for visibility
+            if is_respawn:
+                prompt_label = "Respawn Prompt"
+            elif session_id_to_resume and entry.get("follow_up_prompt"):
+                prompt_label = "Follow-up Prompt"
+            else:
+                prompt_label = "System Prompt"
+            discord_relay.post_prompt(full_prompt, label=prompt_label)
+
             # Send initial prompt
             await client.query(full_prompt)
+
+            was_steered = False  # Track if the last response was from a steer
 
             while True:
                 steered = False
@@ -750,6 +761,7 @@ async def run_task(entry, is_respawn=False, respawn_context=""):
                         await client.query(f"[STEERING from human operator]: {steer}")
                         discord_relay.set_status("running")
                         steered = True
+                        was_steered = True
                         break  # Restart receive_response loop
 
                 if killed:
@@ -757,6 +769,20 @@ async def run_task(entry, is_respawn=False, respawn_context=""):
 
                 if steered:
                     continue  # Re-enter receive_response loop
+
+                # After a steered response completes, CC often stops instead
+                # of continuing the original task. Auto-resume instead of
+                # falling through to the follow-up timeout.
+                if was_steered:
+                    was_steered = False
+                    log.info(f"  Auto-resuming {task_id} after steer")
+                    discord_relay._post("🔄 Resuming original task...")
+                    await client.query(
+                        "[SYSTEM]: The steering message has been addressed. "
+                        "Now continue working on your original task. "
+                        "The task is NOT complete until you have created and pushed the PR."
+                    )
+                    continue
 
                 # Response complete — wait for follow-up steering (30s for background tasks)
                 try:
@@ -883,13 +909,15 @@ async def run_task(entry, is_respawn=False, respawn_context=""):
                     f"Review feedback: {review_body}"
                 )
 
-        # Post to #quick-wins
-        risk_emoji = {"high": "🔴 HIGH RISK", "medium": "🟡 MEDIUM RISK", "low": "🟢 LOW RISK"}[risk]
-        desc = task_entry.get("description", task_id)
-        post_to_quickwins(
-            f"{risk_emoji} ✅ **PR ready for review:** {desc}\n"
-            f"   → <{pr_url}>"
-        )
+        # Post to #quick-wins (only once per task)
+        if not task_entry.get("quickwinsPosted"):
+            risk_emoji = {"high": "🔴 HIGH RISK", "medium": "🟡 MEDIUM RISK", "low": "🟢 LOW RISK"}[risk]
+            desc = task_entry.get("description", task_id)
+            post_to_quickwins(
+                f"{risk_emoji} ✅ **PR ready for review:** {desc}\n"
+                f"   → <{pr_url}>"
+            )
+            task_entry["quickwinsPosted"] = True
 
         # Post PR link to Discord thread
         discord_relay.post_pr(pr_url, risk)
@@ -1225,6 +1253,125 @@ def check_master_ci():
         CI_FIX_COOLDOWN_FILE.write_text(json.dumps(cooldowns, indent=2))
 
 # ---------------------------------------------------------------------------
+# Thread reply monitoring — auto follow-up from Discord thread replies
+# ---------------------------------------------------------------------------
+
+THREAD_REPLY_MAX_AGE = 24 * 3600  # Only watch threads from the last 24h
+
+# In-memory tracking of last seen message per thread (initialized on first check)
+_thread_last_seen = {}
+_thread_followup_pending = set()
+
+
+def check_thread_replies():
+    """Check completed task threads for new human messages → auto follow-up.
+
+    When Patrick replies in a completed task's Discord thread, enqueue
+    a follow-up that resumes the saved session with full CC context.
+    """
+    data = load_registry()
+    now = time.time()
+    bot_user_id = get_bot_user_id() if DISCORD_BOT_TOKEN else None
+    if not bot_user_id:
+        return
+
+    for task in data.get("tasks", []):
+        tid = task["id"]
+
+        # Only check recently completed tasks with threads and sessions
+        if task["status"] not in ("done", "pr_open"):
+            continue
+        thread_id = task.get("discordThreadId")
+        session_id = task.get("session_id")
+        if not thread_id or not session_id:
+            continue
+
+        # Skip if a follow-up is already queued for this task
+        if tid in _thread_followup_pending:
+            continue
+
+        # Skip if already queued (check queue directly)
+        qdata = load_queue()
+        if any(e.get("task_id") == tid for e in qdata.get("queue", [])):
+            continue
+
+        # Only watch tasks completed in the last 24h
+        started = task.get("startedAt", 0)
+        if now - (started / 1000) > THREAD_REPLY_MAX_AGE:
+            continue
+
+        # Initialize last_seen to latest message on first encounter
+        if tid not in _thread_last_seen:
+            init_result = _discord_api(
+                "GET",
+                f"https://discord.com/api/v10/channels/{thread_id}"
+                f"/messages?limit=1",
+            )
+            if init_result and isinstance(init_result, list) and init_result:
+                _thread_last_seen[tid] = init_result[0]["id"]
+            else:
+                _thread_last_seen[tid] = "0"
+            continue  # Don't check for new messages on the init pass
+
+        last_seen = _thread_last_seen[tid]
+
+        # Fetch new messages since last check
+        result = _discord_api(
+            "GET",
+            f"https://discord.com/api/v10/channels/{thread_id}"
+            f"/messages?after={last_seen}&limit=10",
+        )
+
+        if not result or not isinstance(result, list) or not result:
+            continue
+
+        # Process newest-first → chronological
+        result.sort(key=lambda m: m["id"])
+
+        human_messages = []
+        for msg in result:
+            _thread_last_seen[tid] = msg["id"]  # Advance cursor
+            author = msg.get("author", {})
+            if author.get("id") == bot_user_id or author.get("bot"):
+                continue
+            content = msg.get("content", "").strip()
+            if content:
+                human_messages.append(content)
+
+        if not human_messages:
+            continue
+
+        # Combine messages into a single follow-up prompt
+        combined = "\n\n".join(human_messages)
+        log.info(f"Thread reply for {tid}: {combined[:80]}")
+
+        # Enqueue follow-up (insert at front of queue for priority)
+        qdata = load_queue()
+        qdata.setdefault("queue", []).insert(0, {
+            "task_id": tid,
+            "repo": task["repo"],
+            "description": task.get("description", tid),
+            "follow_up_prompt": combined,
+            "session_id": session_id,
+            "branch": task.get("branch", ""),
+            "worktree": task.get("worktree", ""),
+            "discordThreadId": thread_id,
+            "queued_at": datetime.now(timezone.utc).isoformat(),
+        })
+        save_queue(qdata)
+        _thread_followup_pending.add(tid)
+
+        # Acknowledge in the thread
+        _discord_api(
+            "POST",
+            f"https://discord.com/api/v10/channels/{thread_id}/messages",
+            {"content": "📩 **Follow-up queued** — resuming session with your message."},
+        )
+
+        log.info(f"  Enqueued thread reply follow-up for {tid}")
+
+
+# ---------------------------------------------------------------------------
 # Main loop
 # ---------------------------------------------------------------------------
 
@@ -1309,12 +1456,19 @@ async def main_loop():
                             cwd=str(DEV_REPO),
                         )
 
+                    # Clear follow-up pending flag if this was a thread reply
+                    _thread_followup_pending.discard(task_id)
+
                     await run_task(entry)
                     continue  # Check for more work immediately
 
             # --- Monitor open PRs (every 5th cycle = ~2.5 min) ---
             if loop_count % 5 == 0:
                 monitor_open_prs()
+
+            # --- Check thread replies (every 5th cycle = ~2.5 min) ---
+            if loop_count % 5 == 2:
+                check_thread_replies()
 
             # --- Stale task detection (every 10th cycle = ~5 min) ---
             if loop_count % 10 == 0:

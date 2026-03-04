@@ -8,11 +8,11 @@
 
 ## Context
 
-Hurin (Haiku 4.5 router) was intended to be a dumb pipe that routes all intelligence to Claude Code (CC) via `exec` + `claude -p`. In practice, hurin was acting autonomously — reading files, running shell commands, editing configs, and even moving the entire monorepo — all without delegating to CC.
+Hurin (MiniMax M2.5 router) was intended to be a dumb pipe that routes all intelligence to Claude Code (CC) via `exec` + `claude -p`. In practice, hurin was acting autonomously — reading files, running shell commands, editing configs, and even moving the entire monorepo — all without delegating to CC.
 
-Root cause: hurin's tool allowlist included `read`, `write`, and `edit` alongside `exec`. Haiku is not reliable enough to obey complex behavioral constraints ("don't use these tools") when the tools are available. The SOUL.md instructions said the right things, but a small model under pressure will use whatever tools it has.
+Root cause: hurin's tool allowlist included `read`, `write`, and `edit` alongside `exec`. MiniMax M2.5 is not reliable enough to obey complex behavioral constraints ("don't use these tools") when the tools are available. The SOUL.md instructions said the right things, but a small model under pressure will use whatever tools it has.
 
-The incident that triggered this: message `1476663124622053489` ("yes.") caused hurin to interpret a short reply as confirmation to move `~/Projects/theapp` → `~/.openclaw/workspace-hurin/theapp/`, running 15+ tool calls (mv, ls, uv sync, edit) directly on Haiku without any CC involvement.
+The incident that triggered this: message `1476663124622053489` ("yes.") caused hurin to interpret a short reply as confirmation to move `~/Projects/theapp` → `~/.openclaw/workspace-hurin/theapp/`, running 15+ tool calls (mv, ls, uv sync, edit) directly on MiniMax M2.5 without any CC involvement.
 
 ## Decision
 
@@ -26,15 +26,16 @@ Removed `read`, `write`, `edit` from hurin's tool allowlist. Hurin now only has:
 }
 ```
 
-If Haiku tries to read/write/edit files, the tool call is rejected by OpenClaw. This is not a prompt-level constraint — it's structural.
+If MiniMax M2.5 tries to read/write/edit files, the tool call is rejected by OpenClaw. This is not a prompt-level constraint — it's structural.
 
 ### Layer 2: Prompt hardening (SOUL.md)
 
-Added `ABSOLUTE RULE` section at the top of SOUL.md:
+SOUL.md defines hurin as a "smart router + light operator" with clear triage rules:
 
-> Every single message from Patrick MUST be routed to CC via `exec` + `claude -p`. No exceptions. Ever.
+- **Handle directly:** read-only queries (git status, task list), system admin, file summarization, simple config edits, status/monitoring
+- **Delegate to CC:** anything touching application code, multi-file changes, planning, debugging, implementation
 
-Exhaustive lists of what hurin does (5 steps) and never does (no shell commands, no file ops, no interpreting user intent).
+The test: "Can I answer this with `exec` commands I already know, without needing to understand application code?" Yes → handle. No → delegate via `cc-query.py` (Mode 1) or `task spawn` (Mode 2).
 
 ### Layer 3: Thinking disabled
 
@@ -84,33 +85,33 @@ Patrick sends message in Discord #planning
 |  OpenClaw Gateway                |
 |  Receives Discord MESSAGE_CREATE |
 |  Routes to hurin agent session   |
-|  Model: claude-haiku-4-5 ($API)  |
+|  Model: minimax/MiniMax-M2.5     |
 |  Thinking: off                   |
 +----------------------------------+
         |
         v
 +----------------------------------+
-|  Hurin (Haiku) - Loop 1          |
+|  Hurin (MiniMax M2.5) - Loop 1   |
 |  Reads message, decides: route   |
-|  exec: discord-react.sh add      |  <-- ~0.5s
+|  exec: discord-react.sh add 🧠   |  <-- ~0.5s
 +----------------------------------+
         |
         v
 +----------------------------------+
-|  Hurin (Haiku) - Loop 2          |
-|  exec: cd ~/.openclaw/workspace  |
-|    -hurin/theapp &&              |
-|    claude -p --model opus        |
-|    --dangerously-skip-           |  <-- BLOCKS 1-5 min
-|    permissions <<'PROMPT'        |     CC reads codebase,
-|    [Patrick's message]           |     does all intelligence
-|    PROMPT                        |     $0 (Max plan CLI)
+|  Hurin (MiniMax M2.5) - Loop 2   |
+|  exec: uv run --directory        |
+|    ~/.openclaw/monitor python    |
+|    cc-query.py --description     |  <-- BLOCKS 1-5 min
+|    '<desc>' --source-url '...'   |     Agent SDK query()
+|    <<'PROMPT'                    |     Discord thread in #tasks
+|    [Patrick's message]           |     $0 (Max plan CLI)
+|    PROMPT                        |
 +----------------------------------+
         |
         v
 +----------------------------------+
-|  Hurin (Haiku) - Loop 3          |
-|  exec: discord-react.sh remove   |  <-- ~0.5s
+|  Hurin (MiniMax M2.5) - Loop 3   |
+|  exec: discord-react.sh remove 🧠|  <-- ~0.5s
 |  Relays CC output verbatim       |
 +----------------------------------+
         |
@@ -120,28 +121,29 @@ Patrick sends message in Discord #planning
 |  Sends response to Discord       |
 +----------------------------------+
 
-Per-message Haiku cost:
-  Input:  session_tokens x $0.80/MTok
-  Output: ~200-500 tokens x $4.00/MTok
+Per-message MiniMax M2.5 cost:
+  Input:  session_tokens x $0.30/MTok
+  Output: ~200-500 tokens x $1.20/MTok
   CC:     $0.00 (Max plan)
-  Total:  $0.01-0.03 depending on session size
+  Total:  ~$0.01 depending on session size
 ```
 
 ## Consequences
 
 ### Positive
 
-- Hurin can no longer act autonomously — structural enforcement, not just prompt
+- Hurin can no longer act on code autonomously — structural enforcement (no read/write/edit tools), not just prompt
 - Thinking-off cuts cost by ~50-66% per message
 - Validated across 5 experiments with consistent results
 - CC does all intelligence at $0 via Max plan CLI
 
 ### Negative
 
-- Hurin cannot read its own workspace files (TOOLS.md, memory/) — must rely on system prompt and CC
+- Hurin cannot read its own workspace files directly (TOOLS.md, memory/) — must rely on system prompt context or `exec` + `cat`
 - If CC call fails (e.g. wrong path), hurin has limited ability to self-correct without `read`
 
 ### Risks
 
 - Session context growth increases per-message cost over time (mitigated by 15-min idle reset)
-- Haiku without thinking may occasionally misparse messages — monitor for routing failures
+- MiniMax M2.5 without thinking may occasionally misparse messages — monitor for routing failures
+- MiniMax M2.5 pricing ($0.30/$1.20 per MTok) is different from original Haiku pricing ($0.80/$4.00) — cost projections above reflect the original Haiku experiments, actual costs are lower
