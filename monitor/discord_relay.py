@@ -423,6 +423,30 @@ class DiscordThreadRelay:
         self._buffer_chars = 0
         self._last_flush = time.time()
 
+    def post_prompt(self, full_prompt, label="System Prompt"):
+        """Post the full prompt sent to the Agent SDK into the thread."""
+        if not self.thread_id:
+            return
+        header = f"## 📋 {label}\n"
+        # Wrap in a code block for readability; split if needed
+        body = full_prompt.strip()
+        # Discord limit is 2000 chars per message; header + fences ~30 chars
+        max_body = 1990 - len(header) - 10  # leave room for fences + newlines
+        chunks = []
+        while body:
+            chunk = body[:max_body]
+            if len(body) > max_body:
+                # Try to split on a newline
+                split_at = chunk.rfind("\n")
+                if split_at > 200:
+                    chunk = body[:split_at]
+            chunks.append(chunk)
+            body = body[len(chunk):].lstrip("\n")
+
+        for i, chunk in enumerate(chunks):
+            prefix = header if i == 0 else ""
+            self._post(f"{prefix}```\n{chunk}\n```")
+
     def post_pr(self, pr_url, risk):
         """Post PR notification to the thread."""
         if not self.thread_id:

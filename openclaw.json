@@ -184,7 +184,6 @@
       "accounts": {
         "hurin": {
           "enabled": true,
-          "token": "REDACTED_DISCORD_TOKEN_OLD",
           "allowBots": true,
           "groupPolicy": "allowlist",
           "historyLimit": 50,
@@ -213,7 +212,8 @@
                 }
               }
             }
-          }
+          },
+          "token": "REDACTED_DISCORD_TOKEN"
         },
         "default": {
           "groupPolicy": "allowlist",
@@ -227,7 +227,7 @@
     "bind": "loopback",
     "auth": {
       "mode": "token",
-      "token": "REDACTED_GATEWAY_TOKEN_OLD"
+      "token": "REDACTED_GATEWAY_TOKEN"
     },
     "trustedProxies": [
       "127.0.0.1",
@@ -255,6 +255,15 @@
       "update": {
         "interval": "5m",
         "onBoot": true
+      }
+    }
+  },
+  "secrets": {
+    "providers": {
+      "keychain": {
+        "source": "file",
+        "path": "/Users/hurin/.openclaw/secrets.json",
+        "mode": "json"
       }
     }
   }

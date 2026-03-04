@@ -1,6 +1,7 @@
 # === Auth & secrets ===
 **/auth-profiles.json
 auth*.json
+secrets.json
 identity/
 devices/
 
@@ -46,6 +47,7 @@ monitor/task-logs/
 monitor/kill-sentinels/
 monitor/review-failures/
 monitor/task-queue.json
+monitor/queue-prompts/
 monitor/evolution-actions-queue.json
 monitor/.venv/
 monitor/*.backup
