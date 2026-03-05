@@ -159,6 +159,8 @@ async def run_query(prompt: str, args) -> int:
             # Send initial prompt
             await client.query(prompt)
 
+            was_steered = False  # Track if the last response was from a steer
+
             while True:
                 steered = False
 
@@ -194,10 +196,23 @@ async def run_query(prompt: str, args) -> int:
                         await client.query(f"[STEERING from human operator]: {steer}")
                         relay.set_status("running")
                         steered = True
+                        was_steered = True
                         break  # Restart receive_response loop
 
                 if steered:
                     continue  # Re-enter receive_response loop
+
+                # After a steered response completes, CC often stops instead
+                # of continuing the original task. Auto-resume.
+                if was_steered:
+                    was_steered = False
+                    log.info("Auto-resuming after steer")
+                    relay._post("🔄 Resuming original task...")
+                    await client.query(
+                        "[SYSTEM]: The steering message has been addressed. "
+                        "Now continue working on your original task."
+                    )
+                    continue
 
                 # Response complete — wait briefly for follow-up steering
                 try:

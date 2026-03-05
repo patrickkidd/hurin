@@ -91,6 +91,7 @@ def discord_api(method, url, payload=None):
     headers = {
         "Authorization": f"Bot {DISCORD_BOT_TOKEN}",
         "Content-Type": "application/json",
+        "User-Agent": "TeamLead (https://openclaw.ai, 2.0)",
     }
     data = json.dumps(payload).encode() if payload else None
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
