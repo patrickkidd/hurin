@@ -230,7 +230,7 @@ The goal: Be helpful without being annoying. Check in a few times a day, do usef
 
 ## PR Conventions
 
-- **Always include the task name in the PR title** if one exists (e.g. `T7-4: Add "Build my diagram" button in QML`). This applies to all delegations to beren and tuor.
+- **Always include the task name in the PR title** if one exists (e.g. `T7-4: Add "Build my diagram" button in QML`).
 
 ## Make It Yours
 

@@ -4,15 +4,16 @@ Helper scripts for managing GitHub projects and background Claude Code tasks.
 
 ## Quick Reference
 
-### Task Management
+### Task Management (use the `task` wrapper)
 
 | Command | Use Case |
 |---------|----------|
-| `spawn-task.sh` | Start a background Claude Code task |
-| `tasks.sh` | Monitor all active tasks |
-| `tasks.sh <task-id>` | Attach to a specific task (read-only) |
-| `tasks.sh -l` | List active tasks without output |
+| `task spawn <repo> <id> '<desc>'` | Start a background Claude Code task |
+| `task status` | Dashboard of all active tasks |
+| `task watch <task-id>` | Watch a specific task (live JSONL log) |
+| `task list` | List all task names |
 | `task kill <task-id>` | Kill stuck task, clean up worktree |
+| `task follow-up <id> "<msg>"` | Resume a completed task's session |
 
 ### GitHub Project Integration
 
@@ -94,7 +95,7 @@ tasks.sh <task-id> # Attach to specific task in tmux (live, read-only)
 **What's happening behind the scenes:**
 - Each spawned task runs in its own tmux session named `claude-<task-id>`
 - Task state is tracked in `.clawdbot/active-tasks.json` in the monorepo
-- The monitor script (`~/.openclaw/monitor/check-agents.py`) polls every 10 minutes to check on tasks, capture PRs, run reviews, and alert you if something goes wrong
+- The task daemon (`~/.openclaw/monitor/task-daemon.py`) manages task execution, auto-respawns failures (up to 3x), and streams progress to Discord
 
 ### gh-project-find-item.sh — Locate Issue in Project
 
@@ -123,8 +124,10 @@ Updates a GitHub project item's status or owner.
 gh-project-sync.sh <item-id> [--status <status>] [--owner <owner>]
 ```
 
-**Valid statuses:** `Todo`, `In Progress`, `Done`  
-**Valid owners:** `Patrick`, `Hurin`, `Beren`, `Tuor`
+**Valid statuses:** `Todo`, `In Progress`, `Done`
+**Valid owners:** `Patrick`, `Hurin`
+**Valid priorities:** `P0`, `P1`, `P2`, `P3`
+**Valid components:** `Frontend`, `Backend`, `Infra`, `Design`, `Both`
 
 **Example:**
 ```bash
@@ -196,16 +199,14 @@ spawn-task.sh --repo btcopilot --task my-fix ...
 - Check that the registry exists: `cat ~/.openclaw/workspace-hurin/theapp/.clawdbot/active-tasks.json`
 - Verify the task ID matches exactly
 
-**Task spawned but tmux session appears dead (`✗ dead`)**
-- Claude might still be running in the background. Check:
-  ```bash
-  tmux list-sessions
-  tmux capture-pane -t claude-<task-id> -p
-  ```
+**Task appears stuck (no output for a long time)**
+- Check task logs: `task watch <task-id>`
 - If truly stuck, kill and re-spawn:
   ```bash
-  tmux kill-session -t claude-<task-id>
-  spawn-task.sh ... (with corrected prompt for Ralph Loop)
+  task kill <task-id>
+  task spawn <repo> <new-id> '<desc>' <<'PROMPT'
+  ...
+  PROMPT
   ```
 
 **`gh-project-sync.sh` returns empty or errors**
@@ -226,13 +227,13 @@ spawn-task.sh --repo btcopilot --task my-fix ...
 │  ├─ Registers task in .clawdbot/active-tasks.json
 │  └─ Returns immediately (fire-and-forget)
 │
-├─ Monitor script (~/.openclaw/monitor/check-agents.py) polls every 10 min
+├─ Task daemon (~/.openclaw/monitor/task-daemon.py) manages execution
 │  │
-│  ├─ Checks if tmux session still alive
-│  ├─ Watches for PR creation (checks git)
-│  ├─ Runs CI checks (gh api)
-│  ├─ Runs automated review
-│  └─ On failure: captures log, alerts Hurin (Ralph Loop V2)
+│  ├─ Streams progress to Discord thread in real time
+│  ├─ Watches for PR creation
+│  ├─ Auto-respawns on failure (up to 3x with session resume)
+│  ├─ Syncs project board on completion
+│  └─ On max respawns exhausted: escalates to Hurin (Ralph Loop)
 │
 └─ When complete: PR merged, worktree cleaned, task marked Done
 ```

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # gh-project-sync.sh — Update a Family Diagram project item's fields
 # Usage: gh-project-sync.sh <item_id> [--status Todo|"In Progress"|Done]
-#        [--owner Patrick|Hurin|Beren|Tuor] [--priority P0|P1|P2|P3]
+#        [--owner Patrick|Hurin] [--priority P0|P1|P2|P3]
 #        [--component Frontend|Backend|Infra|Design|Both]
 
 PROJECT_ID="PVT_kwHOABjmWc4BP0PU"
@@ -15,11 +15,11 @@ STATUS_TODO="1a206b7c"
 STATUS_IN_PROGRESS="f2e96042"
 STATUS_DONE="3fb3f387"
 
-# Owner option IDs
+# Owner option IDs (Beren/Tuor are archived agents — kept for backward compat)
 OWNER_PATRICK="2120b409"
 OWNER_HURIN="4e27439a"
-OWNER_BEREN="fb745a0e"
-OWNER_TUOR="e0b8b5b9"
+OWNER_BEREN="fb745a0e"  # archived
+OWNER_TUOR="e0b8b5b9"   # archived
 
 # Priority option IDs
 PRIORITY_P0="932aef5c"
@@ -51,7 +51,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$ITEM_ID" ]]; then
-  echo "Usage: gh-project-sync.sh <item_id> [--status Todo|In Progress|Done] [--owner Patrick|Hurin|Beren|Tuor] [--priority P0|P1|P2|P3] [--component Frontend|Backend|Infra|Design|Both]"
+  echo "Usage: gh-project-sync.sh <item_id> [--status Todo|In Progress|Done] [--owner Patrick|Hurin] [--priority P0|P1|P2|P3] [--component Frontend|Backend|Infra|Design|Both]"
   exit 1
 fi
 

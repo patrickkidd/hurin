@@ -34,7 +34,7 @@ Show a quick summary of the Family Diagram project board.
 
 Options:
   --all              Show all issues (not just in-progress)
-  --owner <name>     Filter by owner (Patrick, Hurin, Beren, Tuor)
+  --owner <name>     Filter by owner (Patrick, Hurin)
   --status <status>  Filter by status (Todo, Todo, Done)
   --priority <prio>  Filter by priority (P0, P1, P2, P3)
 

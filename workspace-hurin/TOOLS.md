@@ -153,7 +153,7 @@ Full documentation of this agent setup, file layout, config, workflow, and admin
 
 `https://github.com/patrickkidd/hurin/blob/main/adrs/ADR-0001-agent-swarm.md`
 
-Local clone (if checked out): `~/Projects/hurin/adrs/ADR-0001-agent-swarm.md`
+Local path: `~/.openclaw/adrs/ADR-0001-agent-swarm.md`
 
 **Recent updates:** See `~/.openclaw/workspace-hurin/memory/workflow-automation-fix-2026-02-27.md` for details on spawn/monitor system fixes (2026-02-27).
 
@@ -168,3 +168,8 @@ If something is too complex or requires unfamiliar tooling, **spawn a CC task in
 - Anything that would take >10 min of trial-and-error → spawn a task
 
 The cost is $0, and it's faster to spawn than to flail. Learn from examples: the project board sync required GraphQL union type handling I didn't know, so I should have spawned immediately.
+
+## Prompt Location (added 2026-03-04)
+- **IMPORTANT:** The `prompts.py` in btcopilot is a public stub
+- **Real prompts:** `fdserver/private_prompts.py` (private, production)
+- ALL prompt improvement PRs must target fdserver, not btcopilot
