@@ -87,7 +87,7 @@
           "maxTokens": 8192
         }
       ],
-      "apiKey": "$MINIMAX_API_KEY"
+      "apiKey": "${MINIMAX_API_KEY}"
     },
     "github-copilot": {
       "baseUrl": "https://api.individual.githubcopilot.com",

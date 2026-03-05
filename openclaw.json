@@ -199,7 +199,7 @@
               }
             }
           },
-          "token": "$DISCORD_BOT_TOKEN"
+          "token": { "source": "file", "provider": "keychain", "id": "/discord-bot-token" }
         },
         "default": {
           "groupPolicy": "allowlist",
@@ -213,7 +213,7 @@
     "bind": "loopback",
     "auth": {
       "mode": "token",
-      "token": "$GATEWAY_AUTH_TOKEN"
+      "token": { "source": "file", "provider": "keychain", "id": "/gateway-auth-token" }
     },
     "trustedProxies": [
       "127.0.0.1",
