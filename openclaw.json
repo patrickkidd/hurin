@@ -111,17 +111,6 @@
         "accountId": "hurin",
         "peer": {
           "kind": "channel",
-          "id": "1475608130040762482"
-        }
-      }
-    },
-    {
-      "agentId": "hurin",
-      "match": {
-        "channel": "discord",
-        "accountId": "hurin",
-        "peer": {
-          "kind": "channel",
           "id": "1476739270663213197"
         }
       }
@@ -198,9 +187,6 @@
                 "1475607956698562690": {
                   "allow": true
                 },
-                "1475608130040762482": {
-                  "allow": true
-                },
                 "1476635425777914007": {
                   "allow": true
                 },
@@ -213,7 +199,7 @@
               }
             }
           },
-          "token": "REDACTED_DISCORD_TOKEN"
+          "token": "$DISCORD_BOT_TOKEN"
         },
         "default": {
           "groupPolicy": "allowlist",
@@ -227,7 +213,7 @@
     "bind": "loopback",
     "auth": {
       "mode": "token",
-      "token": "REDACTED_GATEWAY_TOKEN"
+      "token": "$GATEWAY_AUTH_TOKEN"
     },
     "trustedProxies": [
       "127.0.0.1",

@@ -76,6 +76,9 @@ workspace-hurin/*-worktrees/
 workspace-hurin/feedback/
 workspace-hurin/prod.dump
 
+# === Python ===
+.venv/
+
 # === General ===
 *.lock
 *.pkg

@@ -27,7 +27,7 @@ BRIEFINGS_DIR="$COFOUNDER_DIR/briefings"
 SESSIONS_DIR="$COFOUNDER_DIR/sessions"
 
 # Discord
-DISCORD_BOT_TOKEN="REDACTED_DISCORD_TOKEN_OLD"
+DISCORD_BOT_TOKEN="$(jq -r '.["discord-bot-token"]' "$HOME/.openclaw/secrets.json")"
 DISCORD_GUILD_ID="1474833522710548490"
 DISCORD_CHANNEL_ID="1476739270663213197"
 DISCORD_QUICKWINS_CHANNEL_ID="1476950473893482587"
@@ -38,7 +38,7 @@ ACTIONS_DIR="$COFOUNDER_DIR/actions"
 # WordPress (alaskafamilysystems.com)
 WP_SITE_URL="https://alaskafamilysystems.com"
 WP_USER="patrick@vedanamedia.com"
-WP_APP_PASSWORD="REDACTED_WP_PASSWORD"
+WP_APP_PASSWORD="$(jq -r '.["wp-app-password"]' "$HOME/.openclaw/secrets.json")"
 
 # Claude settings
 CLAUDE_MODEL="claude-opus-4-6"

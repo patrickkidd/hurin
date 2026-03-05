@@ -39,7 +39,7 @@
     <key>OPENCLAW_GATEWAY_PORT</key>
     <string>18789</string>
     <key>OPENCLAW_GATEWAY_TOKEN</key>
-    <string>REDACTED_GATEWAY_TOKEN_OLD</string>
+    <string>SET_FROM_SECRETS_JSON</string>
     <key>OPENCLAW_LAUNCHD_LABEL</key>
     <string>ai.openclaw.gateway</string>
     <key>OPENCLAW_SYSTEMD_UNIT</key>
