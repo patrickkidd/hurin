@@ -166,7 +166,7 @@ def get_review_comments(pr_num, repo_dir):
     return ""
 
 
-HIGH_RISK_PATTERNS = ['auth', 'security', 'payment', 'secret', 'migration', 'deploy', 'config.py']
+HIGH_RISK_PATTERNS = ['auth', 'security', 'payment', 'secret', 'migration', 'deploy', 'config.py', 'ios/', 'testflight', 'build/', 'xcodeproj', 'simulator', '.github/workflows/']
 MEDIUM_RISK_PATTERNS = ['models/', 'engine.py', 'routes/', 'views/', 'api/']
 
 def score_risk(files_changed):

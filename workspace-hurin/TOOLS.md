@@ -140,7 +140,7 @@ For sync queries via `cc-query.py`, each call is currently a fresh session. Sess
 
 - **Project:** Family Diagram #4 — https://github.com/users/patrickkidd/projects/4
 - **Project ID:** `PVT_kwHOABjmWc4BP0PU`
-- **Sync scripts:** `~/workspace-hurin/scripts/gh-project-sync.sh` and `gh-project-find-item.sh`
+- **Sync scripts:** `~/.openclaw/workspace-hurin/scripts/gh-project-sync.sh` and `gh-project-find-item.sh`
 
 **Workflow — always do this when spawning or completing tasks:**
 1. When spawning a task → `gh-project-find-item.sh <repo> <issue>` then `gh-project-sync.sh <item_id> --status "In Progress" --owner Hurin`

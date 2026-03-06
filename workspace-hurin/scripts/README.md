@@ -495,3 +495,183 @@ Monitor logs show the automatic sync:
 - ✓ Works with existing gh-project-find-item.sh and gh-project-sync.sh scripts
 - ✓ Zero new dependencies
 
+
+---
+
+## gh-quick.sh — Quick GitHub Queries (NEW!)
+
+Fast GitHub queries with sensible defaults. No more remembering complex `gh` flags.
+
+**Default repo:** `patrickkidd/familydiagram`
+
+### Usage
+
+```bash
+gh-quick.sh <command> [repo]
+
+# Commands:
+#   prs        — List open PRs
+#   issues     — List open issues
+#   mine       — Issues/PRs assigned to you
+#   ci         — Recent CI runs
+#   status     — Quick dashboard (PRs + issues count)
+#   recent     — Recent commits on main
+#   branches   — Recently updated branches
+```
+
+### Examples
+
+```bash
+# Quick status check (most common)
+gh-quick.sh status
+
+# Open PRs in familydiagram (default)
+gh-quick.sh prs
+
+# Open PRs in btcopilot
+gh-quick.sh prs btcopilot
+
+# Open issues
+gh-quick.sh issues
+
+# Issues in btcopilot
+gh-quick.sh issues btcopilot
+
+# Recent CI runs
+gh-quick.sh ci
+
+# Issues assigned to you
+gh-quick.sh mine
+```
+
+### Output Examples
+
+```
+$ gh-quick.sh status
+=== patrickkidd/familydiagram Status ===
+
+Open PRs:
+  5 PRs
+    #98 Add project board sync script (T7)
+    #88 Add Pattern Intelligence UI for LearnView
+    ...
+
+Open Issues:
+  12 issues
+    #101 T7-21: Build Personal app for iPhone simulator and TestFlight
+    ...
+
+$ gh-quick.sh prs btcopilot
+[97] Fix CI: mock gemini_structured for Pass 3 review — patrickkidd-hurin (2026-03-05) 
+[89] Add per-entity-type F1 breakdown to eval harness — patrickkidd-hurin (2026-03-04) 
+...
+```
+
+### Why This Matters
+
+**Before:** To check open PRs, you'd type:
+```bash
+gh pr list --repo patrickkidd/familydiagram --state open --limit 20 ...
+```
+
+**After:**
+```bash
+gh-quick.sh prs
+```
+
+- Sensible defaults (familydiagram repo, 20 items)
+- Consistent output format
+- Fast to type
+- Easy to remember
+
+---
+
+**Added:** March 5, 2026
+
+---
+
+## gh-quick.sh — Quick GitHub Queries (NEW!)
+
+Fast GitHub queries with sensible defaults. No more remembering complex `gh` flags.
+
+**Default repo:** `patrickkidd/familydiagram`
+
+### Usage
+
+```bash
+gh-quick.sh <command> [repo]
+
+# Commands:
+#   prs        — List open PRs
+#   issues     — List open issues
+#   mine       — Issues/PRs assigned to you
+#   ci         — Recent CI runs
+#   status     — Quick dashboard (PRs + issues count)
+```
+
+### Examples
+
+```bash
+# Quick status check (most common)
+gh-quick.sh status
+
+# Open PRs in familydiagram (default)
+gh-quick.sh prs
+
+# Open PRs in btcopilot
+gh-quick.sh prs btcopilot
+
+# Open issues
+gh-quick.sh issues
+
+# Issues in btcopilot
+gh-quick.sh issues btcopilot
+
+# Recent CI runs
+gh-quick.sh ci
+
+# Issues assigned to you
+gh-quick.sh mine
+```
+
+### Output Examples
+
+```
+$ gh-quick.sh status
+=== patrickkidd/familydiagram Status ===
+
+Open PRs:
+  5 PRs
+    #98 Add project board sync script (T7)
+    #88 Add Pattern Intelligence UI for LearnView
+    ...
+
+Open Issues:
+  12 issues
+    #101 T7-21: Build Personal app for iPhone simulator and TestFlight
+    ...
+
+$ gh-quick.sh prs btcopilot
+[97] Fix CI: mock gemini_structured for Pass 3 review — patrickkidd-hurin (2026-03-05) 
+[89] Add per-entity-type F1 breakdown to eval harness — patrickkidd-hurin (2026-03-04) 
+...
+```
+
+### Why This Matters
+
+**Before:** To check open PRs, you'd type:
+```bash
+gh pr list --repo patrickkidd/familydiagram --state open --limit 20 ...
+```
+
+**After:**
+```bash
+gh-quick.sh prs
+```
+
+- Sensible defaults (familydiagram repo, 20 items)
+- Consistent output format
+- Fast to type
+- Easy to remember
+
+**Added:** March 5, 2026

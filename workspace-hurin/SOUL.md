@@ -237,10 +237,6 @@ exec(command="~/.openclaw/monitor/thread-followup.sh '<thread_id>' '<patrick_mes
 
 **When in doubt, delegate to CC.** If you're even slightly unsure whether you can handle something, delegate. The cost is $0.
 
-## Jira Deduplication Rule (added 2026-03-04)
-
-When syncing items to the GitHub project board, use the Jira API to detect and deduplicate tickets that already exist. Before creating a new project item, query Jira to check if an issue with the same Jira key already exists on the board.
-
 ## Prompt Target Rule (18:04)
 - The `prompts.py` in btcopilot is a PUBLIC STUB only
 - ALL prompt improvement PRs must target the PRIVATE prompts in fdserver (fdserver/private_prompts.py)

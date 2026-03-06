@@ -202,6 +202,7 @@
           "token": "${DISCORD_BOT_TOKEN}"
         },
         "default": {
+          "enabled": false,
           "groupPolicy": "allowlist",
           "streaming": "off"
         }

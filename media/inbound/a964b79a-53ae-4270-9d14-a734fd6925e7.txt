@@ -1,0 +1,22 @@
+patrick@fdserver:~$ sudo journalctl -u ssh --no-pager -n 20
+Mar 05 11:12:07 fdserver sshd[2577177]: Connection closed by invalid user ubuntu 91.192.37.141 port 46118 [preauth]
+Mar 05 11:12:22 fdserver sshd[2577305]: Invalid user peter from 88.142.46.185 port 35428
+Mar 05 11:12:22 fdserver sshd[2577305]: Received disconnect from 88.142.46.185 port 35428:11: Bye Bye [preauth]
+Mar 05 11:12:22 fdserver sshd[2577305]: Disconnected from invalid user peter 88.142.46.185 port 35428 [preauth]
+Mar 05 11:13:12 fdserver sshd[2577821]: Accepted publickey for patrick from 24.237.68.243 port 57815 ssh2: RSA SHA256:i8/6q/3+11nktJLabX7AiA+GHEMJw9VXfOj/7Lahcj0
+Mar 05 11:13:12 fdserver sshd[2577821]: pam_unix(sshd:session): session opened for user patrick(uid=1000) by patrick(uid=0)
+Mar 05 11:13:14 fdserver sshd[2577821]: pam_unix(sshd:session): session closed for user patrick
+Mar 05 11:13:26 fdserver sshd[2578243]: Invalid user hurin from 24.237.68.243 port 54431
+Mar 05 11:13:27 fdserver sshd[2578243]: Connection closed by invalid user hurin 24.237.68.243 port 54431 [preauth]
+Mar 05 11:13:31 fdserver sshd[2578283]: Invalid user ubuntu from 80.94.92.186 port 34156
+Mar 05 11:13:31 fdserver sshd[2578283]: Connection closed by invalid user ubuntu 80.94.92.186 port 34156 [preauth]
+Mar 05 11:13:33 fdserver sshd[2578328]: Invalid user hurin from 24.237.68.243 port 54432
+Mar 05 11:13:33 fdserver sshd[2578328]: Connection closed by invalid user hurin 24.237.68.243 port 54432 [preauth]
+Mar 05 11:13:44 fdserver sshd[2578461]: Invalid user hurin from 24.237.68.243 port 54433
+Mar 05 11:13:44 fdserver sshd[2578461]: Connection closed by invalid user hurin 24.237.68.243 port 54433 [preauth]
+Mar 05 11:14:13 fdserver sshd[2578699]: Invalid user ceshi from 88.142.46.185 port 49022
+Mar 05 11:14:13 fdserver sshd[2578699]: Received disconnect from 88.142.46.185 port 49022:11: Bye Bye [preauth]
+Mar 05 11:14:13 fdserver sshd[2578699]: Disconnected from invalid user ceshi 88.142.46.185 port 49022 [preauth]
+Mar 05 11:15:11 fdserver sshd[2579274]: Accepted publickey for patrick from 24.237.68.243 port 58723 ssh2: RSA SHA256:i8/6q/3+11nktJLabX7AiA+GHEMJw9VXfOj/7Lahcj0
+Mar 05 11:15:11 fdserver sshd[2579274]: pam_unix(sshd:session): session opened for user patrick(uid=1000) by patrick(uid=0)
+patrick@fdserver:~$
