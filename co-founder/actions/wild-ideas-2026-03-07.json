@@ -1,0 +1,26 @@
+{
+  "actions": [
+    {
+      "id": "wild-ideas-2026-03-07-1",
+      "title": "Populate PlanView with AI-generated family insights",
+      "category": "ux",
+      "effort": "small",
+      "confidence": 0.75,
+      "repo": "btcopilot",
+      "plan": "1. Add new endpoint POST /personal/diagrams/{id}/insights that takes diagram_data (people, events, pair_bonds, clusters) and generates 3 Bowen-theory-grounded observations using Gemini. 2. Use existing cluster data + SARF cumulative values as context. 3. Return structured JSON with title, description, supporting_events for each insight. 4. Wire PlanView.qml to call this endpoint and display results as cards.",
+      "spawn_prompt": "Add a family insights generation feature to btcopilot.\n\n1. Create a new route in `btcopilot/personal/routes/diagrams.py`:\n   - `POST /personal/diagrams/<int:diagram_id>/insights`\n   - Reads diagram_data from the diagram\n   - Calls a new function `generate_insights(diagram_data)` in a new file `btcopilot/personal/insights.py`\n   - Returns JSON: `{\"insights\": [{\"title\": str, \"description\": str, \"supporting_events\": [int]}]}`\n\n2. `generate_insights()` should:\n   - Extract all shift events with SARF values\n   - Build a summary of people, relationships, and SARF patterns\n   - Call `gemini_text_sync()` from `btcopilot/llmutil.py` with a prompt asking for 3 observations grounded in Bowen family systems theory\n   - Parse the response into structured insights\n   - Temperature 0.3\n\n3. The prompt should:\n   - Receive the list of people (names, relationships) and events (dates, descriptions, SARF values)\n   - Ask for patterns: reciprocal relationships, multigenerational transmission, triangle patterns, symptom-event correlations\n   - Each insight must reference specific events by ID\n   - Keep language accessible (not clinical jargon)\n   - Include disclaimer: 'These observations are AI-generated pattern summaries, not clinical advice'\n\n4. Add a test in `tests/personal/test_insights.py` that mocks the LLM call and verifies the endpoint returns valid JSON structure.\n\nAcceptance criteria:\n- Endpoint returns 200 with 3 insights for a diagram with events\n- Each insight has title, description, and supporting_events list\n- Empty diagram returns empty insights list\n- Test passes",
+      "success_metric": "POST /personal/diagrams/{id}/insights returns structured insights for a diagram with SARF-coded events"
+    },
+    {
+      "id": "wild-ideas-2026-03-07-2",
+      "title": "Add microphone button to DiscussView for voice input",
+      "category": "ux",
+      "effort": "small",
+      "confidence": 0.6,
+      "repo": "familydiagram",
+      "plan": "1. Add a microphone toggle button next to the send button in DiscussView.qml. 2. Use Qt Multimedia QAudioRecorder to capture audio. 3. On stop, send audio to AssemblyAI real-time transcription endpoint (already a dependency). 4. Feed transcribed text into the existing sendStatement() flow. 5. Show transcription in the text input field before sending.",
+      "spawn_prompt": "Add a voice input button to the personal app chat interface.\n\nFiles to modify:\n- `familydiagram/pkdiagram/resources/qml/Personal/DiscussView.qml` — add microphone button next to send button\n- `familydiagram/pkdiagram/personal/personalappcontroller.py` — add voice recording and transcription methods\n\n1. In DiscussView.qml:\n   - Add a microphone icon button (use existing PK.Button pattern) next to the send button in the input area\n   - Toggle state: idle (mic icon) → recording (red pulsing mic icon) → transcribing (spinner)\n   - On recording complete, call `personalApp.transcribeAudio(filePath)`\n   - On transcription complete, populate the text input field with result\n\n2. In personalappcontroller.py:\n   - Add `startRecording()` method using QMediaRecorder (from PyQt5.QtMultimedia)\n   - Add `stopRecording()` method that saves to temp file\n   - Add `transcribeAudio(filePath)` that sends audio to AssemblyAI REST API\n   - Use QNetworkAccessManager for the HTTP call (consistent with existing patterns)\n   - Emit signal `transcriptionReady(text)` when done\n   - Store AssemblyAI API key from server config or environment\n\nAcceptance criteria:\n- Microphone button visible in chat input area\n- Tapping starts/stops recording\n- Audio is transcribed and placed in text field\n- User can edit before sending\n- Works on iOS (QMediaRecorder is cross-platform in Qt 5.15)",
+      "success_metric": "User can tap mic, speak, see transcription in text field, and send as a chat statement"
+    }
+  ]
+}
