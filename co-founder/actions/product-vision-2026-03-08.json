@@ -1,0 +1,26 @@
+{
+  "actions": [
+    {
+      "id": "product-vision-2026-03-08-1",
+      "title": "Hide Plan tab until it has content",
+      "category": "ux",
+      "effort": "trivial",
+      "confidence": 0.95,
+      "repo": "familydiagram",
+      "plan": "1. In PersonalContainer.qml, remove 'Plan' from the tab bar Repeater model. 2. Remove the PlanView from the StackLayout. 3. Keep PlanView.qml file intact for future use. 4. Adjust tab bar width calculation (now /2 instead of /3).",
+      "spawn_prompt": "Hide the Plan tab from the personal app UI — it's a stub that shows 'Guidance, action items go here' and makes the app feel unfinished.\n\nFile: `familydiagram/pkdiagram/resources/qml/Personal/PersonalContainer.qml`\n\nChanges:\n1. In the StackLayout (id: stack, ~line 305), remove the `Personal.PlanView` block (lines ~327-331)\n2. In the tab bar Repeater (~line 357), change the model from `[\"Discuss\", \"Learn\", \"Plan\"]` to `[\"Discuss\", \"Learn\"]`\n3. In the tab bar item width calculation (~line 360), change `root.width / 3` to `root.width / 2`\n4. Remove the static 'Plan' title text in the header (~line 195-202, the block with `visible: tabBar.currentIndex === 2`)\n5. Remove `property var planView: planView` from the root properties (~line 23)\n\nDo NOT delete PlanView.qml — just disconnect it from the UI.\n\nAcceptance criteria:\n- App shows only Discuss and Learn tabs, evenly split\n- No references to planView cause runtime errors (search for planView usage in other QML files)\n- Header shows correct title for each tab",
+      "success_metric": "Personal app shows 2 tabs (Discuss, Learn) with no empty stub visible"
+    },
+    {
+      "id": "product-vision-2026-03-08-2",
+      "title": "Add label to extract button for discoverability",
+      "category": "ux",
+      "effort": "trivial",
+      "confidence": 0.9,
+      "repo": "familydiagram",
+      "plan": "1. In PersonalContainer.qml, replace the extract button's canvas-drawn icon with a text label 'Build Diagram' inside a rounded rectangle. 2. Keep the same position (top-right of header on Discuss tab). 3. Widen the button to fit the text.",
+      "spawn_prompt": "Replace the cryptic extract button icon with a text label for better discoverability.\n\nFile: `familydiagram/pkdiagram/resources/qml/Personal/PersonalContainer.qml`\n\nThe extract button is at ~line 231-276 (id: extractButton). It's a 28x28 circle with a Canvas-drawn down-arrow icon. New users have no idea what it does.\n\nChanges:\n1. Replace the extractButton Rectangle (~lines 231-276) with a wider pill-shaped button:\n   - width: auto-sized to text + padding (use `extractLabel.implicitWidth + 20`)\n   - height: 32\n   - radius: 16\n   - Same color: `util.IS_UI_DARK_MODE ? \"#4495F7\" : \"#007AFF\"`\n   - Remove the Canvas element entirely\n   - Add a Text element (id: extractLabel) with text: \"Build Diagram\", color: \"white\", font.pixelSize: 13, font.weight: Font.Medium\n   - Keep the same anchors (right side of header, verticalCenter)\n   - Keep the same MouseArea + onClicked: personalApp.extractFull()\n   - Keep the same visible: tabBar.currentIndex === 0\n   - Keep objectName: \"extractButton\"\n\n2. Adjust pdpBadge anchoring — it anchors to `extractButton.left`, so it should still work with the wider button\n\nAcceptance criteria:\n- 'Build Diagram' text button visible on Discuss tab header, right side\n- Tapping it calls personalApp.extractFull() (same as before)\n- PDP badge still appears correctly to the left of the button\n- Button is readable on both light and dark mode",
+      "success_metric": "Extract button shows 'Build Diagram' text instead of cryptic icon"
+    }
+  ]
+}
