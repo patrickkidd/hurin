@@ -9,7 +9,10 @@
       "repo": "btcopilot",
       "plan": "1. In btcopilot/training/litreview.py around line 30, change the FileNotFoundError raise to a warning + graceful fallback when prompts file is missing. 2. The litreview module should remain importable even without fdserver co-located — use a lazy-load pattern or guard the import behind a flag. 3. Verify Docker CI passes after the fix.",
       "spawn_prompt": "Fix the btcopilot master CI failure. The Docker test step crashes because `btcopilot/training/litreview.py` line 30 raises `FileNotFoundError` at import time when `fdserver/prompts/private_prompts.py` is not found.\n\nFile: `btcopilot/training/litreview.py`\n\nThe current code (around line 25-30) does something like:\n```python\nprompts_path = ...\nif not prompts_path.exists():\n    raise FileNotFoundError(f'Cannot find production prompts at {prompts_path}...')\n```\n\nThis crashes the entire app import in Docker where fdserver is not co-located.\n\nFix:\n1. Replace the `raise FileNotFoundError` with a warning log and set a module-level flag like `PROMPTS_AVAILABLE = False`\n2. Guard any functions that use the prompts with a check: if not PROMPTS_AVAILABLE, return an appropriate error response (e.g., 503 or raise a runtime error only when the feature is actually called)\n3. The app must remain importable and pass the Docker smoke test (`gunicorn 'btcopilot.app:create_app()'`) even without fdserver prompts\n4. Keep the existing `FDSERVER_PROMPTS_PATH` env var support\n\nAcceptance criteria:\n- `python -c 'from btcopilot.app import create_app; create_app()'` succeeds without fdserver present\n- Docker CI step passes (gunicorn smoke test)\n- Litreview routes return a clear error if prompts are unavailable at request time\n- No changes to behavior when fdserver IS available",
-      "success_metric": "btcopilot master CI passes (Docker smoke test succeeds)"
+      "success_metric": "btcopilot master CI passes (Docker smoke test succeeds)",
+      "issue_url": "https://github.com/patrickkidd/theapp/issues/97",
+      "status": "queued",
+      "approved_at": "2026-03-08T04:05:18Z"
     },
     {
       "id": "project-pulse-2026-03-08-2",
@@ -20,7 +23,9 @@
       "repo": "none",
       "plan": "1. Remove familydiagram worktrees for closed PRs 119 and 120. 2. Prune git worktree references. 3. Delete the corresponding remote branches if they exist.",
       "spawn_prompt": "Clean up stale git worktrees from closed PRs.\n\n1. Remove these directories:\n   - `~/.openclaw/workspace-hurin/familydiagram-worktrees/cf-product-vision-2026-03-08-1`\n   - `~/.openclaw/workspace-hurin/familydiagram-worktrees/cf-product-vision-2026-03-08-2`\n\n2. From the familydiagram repo at `~/.openclaw/workspace-hurin/theapp/familydiagram`, run:\n   - `git worktree prune`\n   - `git branch -D feat/cf-product-vision-2026-03-08-1` (if exists)\n   - `git branch -D feat/cf-product-vision-2026-03-08-2` (if exists)\n\n3. Delete remote branches:\n   - `git push origin --delete feat/cf-product-vision-2026-03-08-1` (if exists)\n   - `git push origin --delete feat/cf-product-vision-2026-03-08-2` (if exists)\n\n4. Update active-tasks.json at `~/.openclaw/workspace-hurin/theapp/.clawdbot/active-tasks.json`:\n   - For tasks `cf-product-vision-2026-03-08-1` and `cf-product-vision-2026-03-08-2`, set status to 'closed' and clear the worktree path\n\nAcceptance criteria:\n- No stale worktree directories remain\n- `git worktree list` from familydiagram repo shows no prunable entries\n- active-tasks.json reflects closed status",
-      "success_metric": "No stale worktree directories, git worktree list is clean"
+      "success_metric": "No stale worktree directories, git worktree list is clean",
+      "issue_url": "https://github.com/patrickkidd/theapp/issues/98",
+      "status": "pending_approval"
     }
   ]
 }
