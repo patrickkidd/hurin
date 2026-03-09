@@ -67,8 +67,8 @@
       {
         "id": "hurin",
         "name": "hurin",
-        "workspace": "/Users/hurin/.openclaw/workspace-hurin",
-        "agentDir": "/Users/hurin/.openclaw/agents/hurin/agent",
+        "workspace": "/home/hurin/.openclaw/workspace-hurin",
+        "agentDir": "/home/hurin/.openclaw/agents/hurin/agent",
         "model": "minimax/MiniMax-M2.5",
         "tools": {
           "allow": [
@@ -136,6 +136,28 @@
           "id": "1476635425777914007"
         }
       }
+    },
+    {
+      "agentId": "hurin",
+      "match": {
+        "channel": "discord",
+        "accountId": "hurin",
+        "peer": {
+          "kind": "channel",
+          "id": "1479984919353626674"
+        }
+      }
+    },
+    {
+      "agentId": "hurin",
+      "match": {
+        "channel": "discord",
+        "accountId": "hurin",
+        "peer": {
+          "kind": "channel",
+          "id": "1478507314427334950"
+        }
+      }
     }
   ],
   "messages": {
@@ -195,6 +217,9 @@
                 },
                 "1476950473893482587": {
                   "allow": true
+                },
+                "1479984919353626674": {
+                  "allow": true
                 }
               }
             }
@@ -225,6 +250,18 @@
     "entries": {
       "cofounder": {
         "enabled": true
+      },
+      "cos": {
+        "enabled": true
+      },
+      "teamlead": {
+        "enabled": true
+      },
+      "task": {
+        "enabled": true
+      },
+      "trust": {
+        "enabled": true
       }
     }
   },
@@ -238,7 +275,7 @@
   "memory": {
     "backend": "qmd",
     "qmd": {
-      "command": "/Users/hurin/.bun/bin/bun /Users/hurin/.bun/install/global/node_modules/@tobilu/qmd/dist/qmd.js",
+      "command": "/home/hurin/.npm-global/bin/qmd",
       "update": {
         "interval": "5m",
         "onBoot": true
@@ -249,7 +286,7 @@
     "providers": {
       "keychain": {
         "source": "file",
-        "path": "/Users/hurin/.openclaw/secrets.json",
+        "path": "/home/hurin/.openclaw/secrets.json",
         "mode": "json"
       }
     }

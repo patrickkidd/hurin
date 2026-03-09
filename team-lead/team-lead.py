@@ -29,6 +29,14 @@ from pathlib import Path
 
 from config import *
 
+# Import shared channel thread registry from discord_relay
+sys.path.insert(0, str(HOME / ".openclaw/monitor"))
+from discord_relay import (
+    load_discord_token as _load_relay_token,
+    create_channel_thread,
+    register_channel_thread,
+)
+
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
@@ -103,17 +111,69 @@ def discord_api(method, url, payload=None):
         return None
 
 
-def post_to_ops(content):
-    """Post a message to #ops."""
-    # Discord max message length is 2000
-    while content:
-        chunk = content[:1990]
-        content = content[1990:]
-        discord_api(
-            "POST",
-            f"https://discord.com/api/v10/channels/{DISCORD_OPS_CHANNEL_ID}/messages",
-            {"content": chunk},
-        )
+def post_to_ops(content, session_id="", synthesis_file=""):
+    """Post a message to #ops as a thread for reply monitoring.
+
+    If session_id is provided, registers the thread for conversational follow-up.
+    Falls back to flat posting if thread creation fails.
+    """
+    if not content:
+        return
+
+    # Split content into chunks
+    chunks = []
+    current = ""
+    for line in content.split("\n"):
+        if current and len(current) + len(line) + 1 > 1900:
+            chunks.append(current)
+            current = ""
+        current = f"{current}\n{line}" if current else line
+    if current:
+        chunks.append(current)
+
+    if not chunks:
+        return
+
+    first_chunk = chunks[0][:2000]
+
+    # Try to create a thread
+    now = datetime.now(timezone.utc)
+    thread_name = f"TL {now.strftime('%b %d %H:%M')}"
+
+    # Initialize discord_relay token for thread registry
+    _load_relay_token()
+
+    thread_id, msg_id = create_channel_thread(
+        DISCORD_OPS_CHANNEL_ID, first_chunk, thread_name
+    )
+
+    if thread_id:
+        # Post remaining chunks in thread
+        for chunk in chunks[1:]:
+            discord_api(
+                "POST",
+                f"https://discord.com/api/v10/channels/{thread_id}/messages",
+                {"content": chunk[:2000]},
+            )
+
+        # Register for reply monitoring if we have a session
+        if session_id:
+            register_channel_thread(
+                thread_id=thread_id,
+                channel_type="teamlead",
+                channel_id=DISCORD_OPS_CHANNEL_ID,
+                session_id=session_id,
+                context_file=synthesis_file,
+                label=thread_name,
+            )
+    else:
+        # Fallback: flat posting (original behavior)
+        for chunk in chunks:
+            discord_api(
+                "POST",
+                f"https://discord.com/api/v10/channels/{DISCORD_OPS_CHANNEL_ID}/messages",
+                {"content": chunk[:2000]},
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -416,6 +476,50 @@ def get_pr_for_issue(issue_number):
         return None
 
 
+def fetch_master_activity(days=7):
+    """Check recent direct commit activity on master across product repos.
+
+    This captures Patrick's interactive CC work that bypasses the task daemon
+    (branch-by-abstraction, pushing straight to master).
+    """
+    repos = ["patrickkidd/familydiagram", "patrickkidd/btcopilot", "patrickkidd/fdserver"]
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    activity = {}
+
+    for repo in repos:
+        code, out, _ = run(
+            f'gh api "repos/{repo}/commits?sha=master&since={since}&per_page=100"',
+            timeout=30,
+        )
+        if code != 0 or not out:
+            continue
+        try:
+            raw = json.loads(out)
+            if not raw:
+                continue
+            commits = []
+            for c in raw:
+                msg = c.get("commit", {}).get("message", "")
+                # Take first line only
+                first_line = msg.split("\n")[0] if msg else ""
+                commits.append({
+                    "sha": c.get("sha", "")[:8],
+                    "message": first_line,
+                    "author": c.get("commit", {}).get("author", {}).get("name", ""),
+                    "date": c.get("commit", {}).get("author", {}).get("date", ""),
+                })
+            if commits:
+                activity[repo.split("/")[1]] = {
+                    "commit_count": len(commits),
+                    "latest": commits[0]["date"] if commits else "",
+                    "recent_messages": [c["message"] for c in commits[:10]],
+                }
+        except (json.JSONDecodeError, KeyError, IndexError):
+            pass
+
+    return activity
+
+
 def collect_github_data():
     """Full GitHub data collection pass."""
     log.info("Collecting GitHub data...")
@@ -424,6 +528,7 @@ def collect_github_data():
     goals, ungrouped = parse_project_items(raw_items)
     open_prs = fetch_open_prs()
     ci_master = fetch_ci_status("master")
+    master_activity = fetch_master_activity(7)
 
     # Cross-reference: for In Progress/Done items, try to find linked PRs
     for items in goals.values():
@@ -438,12 +543,15 @@ def collect_github_data():
         "ungrouped": ungrouped,
         "open_prs": open_prs,
         "ci_master": ci_master,
+        "master_activity": master_activity,
         "collected_at": datetime.now(timezone.utc).isoformat(),
     }
 
+    total_direct_commits = sum(r["commit_count"] for r in master_activity.values())
     log.info(
         f"  Goals: {', '.join(f'{k}: {len(v)} issues' for k, v in goals.items())} "
         f"| Ungrouped: {len(ungrouped)} | Open PRs: {len(open_prs)} | CI: {ci_master}"
+        f" | Direct master commits (7d): {total_direct_commits}"
     )
     return data
 
@@ -601,6 +709,10 @@ def compute_metrics(github_data):
     queue_len = len(qdata.get("queue", []))
     running = get_running_tasks()
 
+    # Direct master commit activity (Patrick's interactive CC work)
+    master_activity = github_data.get("master_activity", {})
+    total_direct_commits = sum(r["commit_count"] for r in master_activity.values())
+
     metrics = {
         "ts": datetime.now(timezone.utc).isoformat(),
         "goals": goal_metrics,
@@ -610,6 +722,8 @@ def compute_metrics(github_data):
         "queue_length": queue_len,
         "running_tasks": len(running),
         "ci_master": github_data.get("ci_master", "unknown"),
+        "direct_master_commits_7d": total_direct_commits,
+        "master_activity": {k: v["commit_count"] for k, v in master_activity.items()},
     }
 
     return metrics
@@ -718,8 +832,9 @@ def detect_anomalies(github_data, metrics, events):
                     f"{goal_name} completion regressed: {prev_pct}% → {curr_pct}%",
                 )
 
-    # Velocity stall: zero tasks completed in N days
-    if metrics.get("velocity_7d", 0) == 0:
+    # Velocity stall: zero tasks completed in N days AND no direct master commits
+    direct_commits = metrics.get("direct_master_commits_7d", 0)
+    if metrics.get("velocity_7d", 0) == 0 and direct_commits == 0:
         data = load_registry()
         has_any_done = any(
             t.get("status") == "done" for t in data.get("tasks", [])
@@ -728,7 +843,7 @@ def detect_anomalies(github_data, metrics, events):
             _emit(
                 "velocity_stall",
                 "medium",
-                f"Zero tasks completed in the last 7 days",
+                f"Zero tasks completed and no direct master commits in the last 7 days",
             )
 
     # Queue backup: >3 items queued for >1h
@@ -797,12 +912,61 @@ def dedup_key(text):
     return hashlib.sha256(text.encode()).hexdigest()[:16]
 
 
+def normalize_recommendation_title(title):
+    """Normalize a recommendation title for fuzzy dedup.
+
+    Strips numbers, PR refs, punctuation, and lowercases so that
+    semantically similar recommendations like 'Review 2 pending co-founder PRs'
+    and 'Review and merge co-founder PRs #119 and #120' produce the same key.
+    """
+    import re
+    t = title.lower().strip()
+    # Remove PR/issue references like #119, #120
+    t = re.sub(r'#\d+', '', t)
+    # Remove standalone numbers (e.g., "2 pending" -> "pending")
+    t = re.sub(r'\b\d+\b', '', t)
+    # Remove punctuation
+    t = re.sub(r'[^\w\s]', '', t)
+    # Collapse whitespace
+    t = re.sub(r'\s+', ' ', t).strip()
+    # Remove filler words and action verbs that vary between phrasings
+    stopwords = {'and', 'the', 'a', 'an', 'to', 'of', 'for', 'with', 'on', 'in',
+                 'pending', 'open', 'current', 'all', 'across', 'existing',
+                 'review', 'merge', 'verify', 'check', 'ensure', 'confirm',
+                 'consider', 'map', 'populate', 'assign', 'update', 'add'}
+    words = [w for w in t.split() if w not in stopwords]
+    return ' '.join(sorted(words))
+
+
+def load_recent_recommendations(n=5):
+    """Load recommendation titles from the last N syntheses for dedup context.
+
+    Returns a list of unique recommendation titles from recent syntheses,
+    ordered newest-first.
+    """
+    synthesis_files = sorted(SYNTHESES_DIR.glob("*.json"), reverse=True)[:n]
+    seen_normalized = set()
+    titles = []
+    for f in synthesis_files:
+        try:
+            data = json.loads(f.read_text())
+            for rec in data.get("recommendations", []):
+                title = rec.get("title", "")
+                norm = normalize_recommendation_title(title)
+                if norm and norm not in seen_normalized:
+                    seen_normalized.add(norm)
+                    titles.append(title)
+        except (json.JSONDecodeError, IOError):
+            continue
+    return titles[:15]  # Cap to avoid bloating the prompt
+
+
 # ---------------------------------------------------------------------------
 # Synthesis engine (Agent SDK)
 # ---------------------------------------------------------------------------
 
-async def run_synthesis(metrics, events, github_data, anomalies, is_morning=False):
-    """Run Agent SDK synthesis to produce recommendations and spawn candidates."""
+async def run_synthesis(metrics, events, github_data, anomalies):
+    """Run weekly Agent SDK synthesis — deep investigation + recommendations."""
     from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient, ResultMessage
 
     goal_summary = ""
@@ -840,21 +1004,73 @@ async def run_synthesis(metrics, events, github_data, anomalies, is_morning=Fals
     running = [t for t in registry_tasks if t.get("status") == "running"]
     pr_open = [t for t in registry_tasks if t.get("status") == "pr_open"]
 
-    brief_type = "MORNING BRIEF" if is_morning else "HOURLY SYNTHESIS"
+    # Trust ledger summary
+    trust_summary_text = ""
+    try:
+        from trust_ledger import get_summary as _trust_summary
+        trust = _trust_summary()
+        parts = []
+        for cat, stats in trust.items():
+            if stats["total"] > 0:
+                parts.append(
+                    f"  {cat}: {stats['accuracy']*100:.0f}% accuracy "
+                    f"({stats['correct']}/{stats['total']} correct, "
+                    f"{stats['pending']} pending)"
+                )
+        trust_summary_text = "\n".join(parts) if parts else "  No data yet"
+    except Exception:
+        trust_summary_text = "  Trust ledger not available"
 
-    prompt = f"""You are the Team Lead for the FamilyDiagram/BTCoPilot MVP project.
+    # Master activity summary for synthesis
+    master_activity = github_data.get("master_activity", {})
+    master_summary = ""
+    if master_activity:
+        total = sum(r["commit_count"] for r in master_activity.values())
+        master_summary = f"  Total: {total} commits in last 7 days\n"
+        for repo, data in master_activity.items():
+            msgs = "\n".join(f"      - {m}" for m in data.get("recent_messages", [])[:5])
+            master_summary += f"  {repo}: {data['commit_count']} commits (latest: {data.get('latest', '?')})\n{msgs}\n"
+    else:
+        master_summary = "  No direct master commits in last 7 days"
+
+    prompt = f"""You are the Team Lead for the FamilyDiagram/BTCoPilot MVP project — Patrick's operational co-founder doing the weekly check-in.
 
 ## Your Role
-Analyze the current project state and produce actionable recommendations.
-You are OPERATIONAL — focus on "what should happen next" and "what's blocked".
 
-## Current Metrics
-- Velocity (7d): {metrics.get('velocity_7d', 0)} tasks/day
+You combine operational awareness with strategic depth. You track MVP progress, identify blockers, set priorities, and ask the hard questions Patrick might be avoiding.
+
+You have **{SYNTHESIS_MAX_TURNS} turns**. Use them to investigate deeply:
+
+1. **Turns 1-3: Gather data.** Run these commands and inspect results:
+   - `git log --oneline -30` across all repos — recent commit activity
+   - `git log --oneline --since="7 days ago"` — what happened this week
+   - `gh pr list --state all --limit 20` — PR activity (open, merged, closed)
+   - `gh issue list --limit 20` — open issues and labels
+   - `gh run list --limit 10` — CI runs (pass/fail)
+   - Read `TODO.md` and the decision log for priorities
+   - Check `.clawdbot/active-tasks.json` for running agent tasks
+   - `ls -la ~/.openclaw/monitor/failures/` — recent agent failures
+   - Investigate anything that looks off. Read source files if a PR or commit looks important.
+
+2. **Turns 4-7: Analyze.** Cross-reference what you found with the metrics below. Identify patterns, blockers, risks. Check agent system health.
+
+3. **Turns 8+: Produce the synthesis.**
+
+## Pre-Collected Metrics
+- Velocity (7d): {metrics.get('velocity_7d', 0)} tasks/day (task daemon only)
+- Direct master commits (7d): {metrics.get('direct_master_commits_7d', 0)} (Patrick's interactive CC work)
 - Cycle time: {metrics.get('cycle_time_hours', 0)}h average
 - Success rate (30d): {metrics.get('success_rate_30d', 0) * 100:.0f}%
 - Queue: {metrics.get('queue_length', 0)} pending
 - Running: {metrics.get('running_tasks', 0)}
 - Master CI: {metrics.get('ci_master', 'unknown')}
+
+## IMPORTANT: Direct Master Activity
+Patrick often works interactively with Claude Code, pushing directly to master
+(branch by abstraction strategy for the training/personal app MVP).
+This work does NOT go through the task daemon or create PRs.
+Do NOT report the project as stalled if there are recent direct commits.
+{master_summary}
 
 ## Goal Status
 {goal_summary}
@@ -868,17 +1084,30 @@ You are OPERATIONAL — focus on "what should happen next" and "what's blocked".
 ## Running Tasks
 {chr(10).join(f"  - {t.get('id', '')}: {t.get('description', '')}" for t in running) or "  None"}
 
+## Trust Ledger (System Performance)
+{trust_summary_text}
+
 ## PRs Awaiting Review
 {chr(10).join(f"  - PR #{t.get('pr', '')}: {t.get('description', '')}" for t in pr_open) or "  None"}
 
-## Instructions
+## Recent Recommendations (DO NOT REPEAT)
+The following recommendations have already appeared in recent syntheses.
+Do NOT produce recommendations that are substantially similar to these.
+Only recommend something again if there is genuinely NEW information or a
+changed situation that warrants repeating it.
+{chr(10).join(f"  - {t}" for t in load_recent_recommendations(DEDUP_RECENT_SYNTHESES)) or "  (none)"}
 
-{"This is the MORNING BRIEF. Summarize overnight activity and produce today's action plan." if is_morning else "Produce an hourly status update."}
+## Output Format
 
 Respond with ONLY valid JSON in this exact format:
 ```json
 {{
   "health_summary": "1-2 sentence overall health assessment",
+  "progress_this_week": "What got done — specific PRs, commits, decisions with numbers/hashes. What shipped or merged.",
+  "priorities": "The 1-3 most important things to work on this week. Critical path to MVP. Back up with codebase evidence.",
+  "blockers_and_risks": "Anything stuck or at risk. Dependencies. PRs open too long.",
+  "agent_system_health": "Are agents running smoothly? Failure patterns. Stale worktrees. Effectiveness assessment.",
+  "uncomfortable_question": "One hard question about priorities, scope, or pace Patrick might be avoiding. Ground it in evidence.",
   "goal_status": [
     {{
       "goal": "Goal 1",
@@ -917,14 +1146,16 @@ Rules for auto_spawn_candidates:
 - Empty array is fine — don't force it
 """
 
-    log.info(f"Running {brief_type}...")
+    log.info("Running weekly synthesis...")
 
     # CLAUDECODE intentionally absent — prevents nested session detection
     synthesis_env = {
-        "GH_TOKEN": BOT_TOKEN,
-        "PATH": "/opt/homebrew/bin:" + str(HOME / ".local/bin") + ":" + os.environ.get("PATH", ""),
+        "PATH": "/usr/local/bin:" + str(HOME / ".local/bin") + ":" + os.environ.get("PATH", ""),
         "HOME": str(HOME),
     }
+    # Only set GH_TOKEN if we have a bot token; otherwise let gh use system auth
+    if BOT_TOKEN:
+        synthesis_env["GH_TOKEN"] = BOT_TOKEN
 
     options = ClaudeAgentOptions(
         model=SYNTHESIS_MODEL,
@@ -936,27 +1167,31 @@ Rules for auto_spawn_candidates:
     )
 
     result_text = ""
+    session_id = ""
     try:
         async with ClaudeSDKClient(options=options) as client:
             await client.query(prompt)
             async for message in client.receive_response():
                 if isinstance(message, ResultMessage):
                     result_text = message.result or ""
+                    session_id = getattr(message, 'session_id', '') or getattr(client, 'session_id', '') or ''
                     break
     except Exception as e:
         log.error(f"Synthesis SDK error: {e}")
-        return None
+        return None, ""
 
     # Parse JSON from result
     synthesis = _parse_synthesis(result_text)
     if synthesis:
         # Save synthesis
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H%M")
-        save_path = SYNTHESES_DIR / f"{'morning' if is_morning else 'hourly'}-{ts}.json"
+        save_path = SYNTHESES_DIR / f"weekly-{ts}.json"
         save_path.write_text(json.dumps(synthesis, indent=2))
         log.info(f"Synthesis saved to {save_path.name}")
+        synthesis["_session_id"] = session_id
+        synthesis["_save_path"] = str(save_path)
 
-    return synthesis
+    return synthesis, session_id
 
 
 def _parse_synthesis(text):
@@ -1074,23 +1309,38 @@ def auto_spawn(candidate, github_data):
 # Process synthesis results
 # ---------------------------------------------------------------------------
 
-def process_synthesis(synthesis, github_data, is_morning=False):
-    """Post recommendations to Discord and execute auto-spawns."""
+def process_synthesis(synthesis, github_data, session_id=""):
+    """Post weekly synthesis to Discord and execute auto-spawns."""
     if not synthesis:
         return
 
-    # Post health summary
     health = synthesis.get("health_summary", "")
+    progress = synthesis.get("progress_this_week", "")
+    priorities = synthesis.get("priorities", "")
+    blockers = synthesis.get("blockers_and_risks", "")
+    agent_health = synthesis.get("agent_system_health", "")
+    uncomfortable = synthesis.get("uncomfortable_question", "")
     goal_status = synthesis.get("goal_status", [])
     recommendations = synthesis.get("recommendations", [])
     spawn_candidates = synthesis.get("auto_spawn_candidates", [])
 
     # Build Discord message
-    brief_type = "Morning Brief" if is_morning else "Hourly Update"
-    parts = [f"## Team Lead — {brief_type}"]
+    parts = ["## Team Lead — Weekly Synthesis"]
 
     if health:
         parts.append(f"\n{health}")
+
+    if progress:
+        parts.append(f"\n### Progress This Week\n{progress}")
+
+    if priorities:
+        parts.append(f"\n### Priorities\n{priorities}")
+
+    if blockers:
+        parts.append(f"\n### Blockers & Risks\n{blockers}")
+
+    if agent_health:
+        parts.append(f"\n### Agent System Health\n{agent_health}")
 
     if goal_status:
         parts.append("\n### Goal Status")
@@ -1107,8 +1357,10 @@ def process_synthesis(synthesis, github_data, is_morning=False):
     if recommendations:
         parts.append("\n### Recommendations")
         for r in recommendations:
-            dk = dedup_key(f"rec:{r['title']}")
+            norm_title = normalize_recommendation_title(r['title'])
+            dk = dedup_key(f"rec:{norm_title}")
             if is_duplicate(dk):
+                log.info(f"  Dedup: skipping recommendation '{r['title']}' (normalized: '{norm_title}')")
                 continue
             mark_seen(dk)
             human_tag = " (human)" if r.get("for_human") else ""
@@ -1117,10 +1369,12 @@ def process_synthesis(synthesis, github_data, is_morning=False):
                 f"  {r.get('rationale', '')}"
             )
 
+    if uncomfortable:
+        parts.append(f"\n### The Uncomfortable Question\n{uncomfortable}")
+
     message = "\n".join(parts)
-    if message and not is_duplicate(dedup_key(f"brief:{brief_type}")):
-        post_to_ops(message)
-        mark_seen(dedup_key(f"brief:{brief_type}"))
+    synthesis_file = synthesis.get("_save_path", "")
+    post_to_ops(message, session_id=session_id, synthesis_file=synthesis_file)
 
     # Execute auto-spawns
     if spawn_candidates and AUTONOMY_TIER >= 1:
@@ -1165,7 +1419,7 @@ async def main_loop():
     log.info(f"  Autonomy tier: {AUTONOMY_TIER}")
     log.info(f"  Business hours: {BIZ_HOUR_START}:00-{BIZ_HOUR_END}:00 AKST")
     log.info(f"  GitHub poll: every {GITHUB_POLL_INTERVAL}s")
-    log.info(f"  Synthesis: every {SYNTHESIS_INTERVAL}s (biz hours only)")
+    log.info(f"  Synthesis: weekly (Monday {SYNTHESIS_HOUR}:00 AKST) + on-demand via /teamlead")
     log.info("=" * 60)
 
     load_tokens()
@@ -1220,17 +1474,32 @@ async def main_loop():
             except Exception as e:
                 log.error(f"GitHub poll error: {e}")
 
-        # --- 3. Synthesis (hourly during biz hours) ---
-        if biz_hours and github_data and now - last_synthesis >= SYNTHESIS_INTERVAL:
+        # --- 3. Weekly synthesis (or on-demand via sentinel / /teamlead command) ---
+        synthesis_sentinel = TEAM_LEAD_DIR / "run-synthesis-now"
+        manual_trigger = synthesis_sentinel.exists()
+        if manual_trigger:
+            synthesis_sentinel.unlink()
+            log.info("Manual synthesis trigger detected")
+
+        # Weekly schedule: check if it's the right day/hour and enough time has passed
+        now_local = datetime.now(TZ)
+        weekly_due = (
+            biz_hours
+            and github_data
+            and now_local.isoweekday() == SYNTHESIS_DAY
+            and now_local.hour == SYNTHESIS_HOUR
+            and now - last_synthesis >= 23 * 3600  # At least 23h since last (prevents double-fire)
+        )
+
+        if weekly_due or manual_trigger:
             try:
-                is_morning = is_morning_brief_time()
                 anomalies = detect_anomalies(github_data, metrics, all_events)
-                synthesis = await run_synthesis(
+                synthesis, session_id = await run_synthesis(
                     metrics, all_events, github_data, anomalies,
-                    is_morning=is_morning,
                 )
                 if synthesis:
-                    process_synthesis(synthesis, github_data, is_morning=is_morning)
+                    process_synthesis(synthesis, github_data,
+                                     session_id=session_id)
                 last_synthesis = now
             except Exception as e:
                 log.error(f"Synthesis error: {e}")

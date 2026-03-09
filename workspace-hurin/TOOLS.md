@@ -173,3 +173,10 @@ The cost is $0, and it's faster to spawn than to flail. Learn from examples: the
 - **IMPORTANT:** The `prompts.py` in btcopilot is a public stub
 - **Real prompts:** `fdserver/private_prompts.py` (private, production)
 - ALL prompt improvement PRs must target fdserver, not btcopilot
+
+
+## Discord Bot Token Setup
+
+If tasks fail to create Discord threads with '401 Unauthorized':
+1. Ensure `discord-bot-token` is in `~/.openclaw/secrets.json`
+2. Restart the task daemon: `pkill -f task-daemon && cd ~/.openclaw/monitor && uv run python task-daemon.py &`

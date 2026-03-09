@@ -39,7 +39,7 @@ metadata: { "openclaw": { "always": true, "emoji": "🧠" } }
 1. Run this exec command (replace `<lens-name>` with the provided name):
 
 ```
-exec(command="nohup /bin/bash /Users/hurin/.openclaw/co-founder/co-founder.sh <lens-name> >> /Users/hurin/.openclaw/co-founder/cron.log 2>&1 &")
+exec(command="nohup /bin/bash /home/hurin/.openclaw/co-founder/co-founder.sh <lens-name> >> /home/hurin/.openclaw/co-founder/cron.log 2>&1 &")
 ```
 
 2. Reply: "Kicked off `<lens-name>` — check #co-founder in ~5-10 minutes. The analysis runs multiple passes now so it takes a bit longer."
@@ -54,7 +54,7 @@ exec(command="nohup /bin/bash /Users/hurin/.openclaw/co-founder/co-founder.sh <l
 2. Run this exec command:
 
 ```
-exec(command="cd /Users/hurin/Projects/theapp && SESSION_ID=$(cat /Users/hurin/.openclaw/co-founder/sessions/<lens-name>-session.txt 2>/dev/null) && /Users/hurin/.local/bin/claude -p --model claude-opus-4-6 --dangerously-skip-permissions --resume \"$SESSION_ID\" <<'PROMPT'\n<the follow-up message>\nPROMPT")
+exec(command="cd /home/hurin/Projects/theapp && SESSION_ID=$(cat /home/hurin/.openclaw/co-founder/sessions/<lens-name>-session.txt 2>/dev/null) && /home/hurin/.local/bin/claude -p --model claude-opus-4-6 --dangerously-skip-permissions --resume \"$SESSION_ID\" <<'PROMPT'\n<the follow-up message>\nPROMPT")
 ```
 
 3. Relay CC's response **verbatim** to the channel. This resumes the original briefing session, so CC has full context of its analysis.
@@ -67,7 +67,7 @@ If the session file doesn't exist, reply: "No session found for `<lens-name>`. R
 
 **If the first argument is "read"** (e.g., `/cofounder read architecture`):
 
-1. Run: `exec(command="cat /Users/hurin/.openclaw/co-founder/briefings/<lens-name>-latest.md 2>/dev/null || echo 'No briefing found for <lens-name>. Run /cofounder <lens-name> first.'")`
+1. Run: `exec(command="cat /home/hurin/.openclaw/co-founder/briefings/<lens-name>-latest.md 2>/dev/null || echo 'No briefing found for <lens-name>. Run /cofounder <lens-name> first.'")`
 2. Relay the content verbatim.
 
 ---
@@ -80,7 +80,7 @@ If the session file doesn't exist, reply: "No session found for `<lens-name>`. R
 2. Run this exec command:
 
 ```
-exec(command="/bin/bash /Users/hurin/.openclaw/co-founder/action-approve.sh <action-id>")
+exec(command="/bin/bash /home/hurin/.openclaw/co-founder/action-approve.sh <action-id>")
 ```
 
 3. Relay the output verbatim. This spawns the approved action via spawn-task.sh.
@@ -95,7 +95,7 @@ exec(command="/bin/bash /Users/hurin/.openclaw/co-founder/action-approve.sh <act
 2. Run this exec command:
 
 ```
-exec(command="/bin/bash /Users/hurin/.openclaw/co-founder/action-refine.sh <action-id> <feedback>")
+exec(command="/bin/bash /home/hurin/.openclaw/co-founder/action-refine.sh <action-id> <feedback>")
 ```
 
 3. Relay CC's response **verbatim**. This resumes the original briefing CC session with the feedback, so CC revises the action plan with full context.
@@ -106,7 +106,7 @@ exec(command="/bin/bash /Users/hurin/.openclaw/co-founder/action-refine.sh <acti
 
 **If the first argument is "actions"** (e.g., `/cofounder actions`):
 
-1. Run: `exec(command="/bin/bash /Users/hurin/.openclaw/co-founder/action-list.sh")`
+1. Run: `exec(command="/bin/bash /home/hurin/.openclaw/co-founder/action-list.sh")`
 2. Relay the output verbatim.
 
 ---
@@ -115,7 +115,7 @@ exec(command="/bin/bash /Users/hurin/.openclaw/co-founder/action-refine.sh <acti
 
 **If the first argument is "status"** (e.g., `/cofounder status`):
 
-1. Run: `exec(command="/bin/bash /Users/hurin/.openclaw/co-founder/action-status.sh")`
+1. Run: `exec(command="/bin/bash /home/hurin/.openclaw/co-founder/action-status.sh")`
 2. Relay the output verbatim. This shows the unified status across GitHub Issues, the task queue, and running tasks.
 
 ---

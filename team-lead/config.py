@@ -98,7 +98,9 @@ MAX_CONCURRENT_SPAWNS = 2
 # ---------------------------------------------------------------------------
 
 GITHUB_POLL_INTERVAL = 900     # 15 min
-SYNTHESIS_INTERVAL = 3600      # 1 hour
+SYNTHESIS_INTERVAL = 7 * 24 * 3600  # Weekly synthesis
+SYNTHESIS_DAY = 1              # Monday (0=Mon in weekday(), but we use isoweekday: 1=Mon)
+SYNTHESIS_HOUR = 9             # 9 AM AKST
 EVENT_POLL_INTERVAL = 5        # seconds
 
 # ---------------------------------------------------------------------------
@@ -139,11 +141,12 @@ MOMENTUM_WINDOW_HOURS = 48
 # Synthesis
 # ---------------------------------------------------------------------------
 
-SYNTHESIS_MAX_TURNS = 3
-SYNTHESIS_MODEL = "claude-sonnet-4-6"  # Cheaper for synthesis, Opus for tasks
+SYNTHESIS_MAX_TURNS = 10  # Deep investigation like project-pulse (was 3 for hourly)
+SYNTHESIS_MODEL = "claude-opus-4-6"  # Sonnet misjudges project state; Opus needed for quality
 
 # ---------------------------------------------------------------------------
 # Dedup
 # ---------------------------------------------------------------------------
 
 DEDUP_TTL_HOURS = 24
+DEDUP_RECENT_SYNTHESES = 5  # Number of past syntheses to check for recommendation dedup

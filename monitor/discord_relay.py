@@ -62,8 +62,19 @@ _discord_bot_token = ""
 
 
 def load_discord_token():
-    """Load Discord bot token from file. Returns the token string."""
+    """Load Discord bot token from secrets.json (preferred) or legacy file."""
     global _discord_bot_token
+    secrets_file = HOME / ".openclaw/secrets.json"
+    if secrets_file.exists():
+        try:
+            import json
+            secrets = json.loads(secrets_file.read_text())
+            token = secrets.get("discord-bot-token", "")
+            if token:
+                _discord_bot_token = token
+                return _discord_bot_token
+        except (json.JSONDecodeError, IOError):
+            pass
     if DISCORD_TOKEN_FILE.exists():
         _discord_bot_token = DISCORD_TOKEN_FILE.read_text().strip()
     return _discord_bot_token
@@ -498,3 +509,119 @@ class DiscordThreadRelay:
     def close(self):
         """Flush any remaining buffer."""
         self._flush()
+
+
+# ---------------------------------------------------------------------------
+# Channel Thread Registry — shared across all components
+# ---------------------------------------------------------------------------
+
+CHANNEL_THREADS_FILE = MONITOR_DIR / "channel-threads.json"
+
+# Max age for monitoring channel threads (7 days)
+CHANNEL_THREAD_MAX_AGE = 7 * 24 * 3600
+
+
+def load_channel_threads():
+    """Load the channel thread registry."""
+    if not CHANNEL_THREADS_FILE.exists():
+        return {"threads": []}
+    try:
+        return json.loads(CHANNEL_THREADS_FILE.read_text())
+    except (json.JSONDecodeError, IOError):
+        return {"threads": []}
+
+
+def save_channel_threads(data):
+    """Save the channel thread registry."""
+    CHANNEL_THREADS_FILE.write_text(json.dumps(data, indent=2))
+
+
+def register_channel_thread(thread_id, channel_type, channel_id,
+                             session_id="", context_file="", label=""):
+    """Register a thread for reply monitoring.
+
+    Args:
+        thread_id: Discord thread ID
+        channel_type: "cos", "teamlead", or "cofounder"
+        channel_id: Discord channel ID the thread belongs to
+        session_id: Claude SDK session ID for resume
+        context_file: Path to the context file (digest, synthesis, briefing)
+        label: Human-readable label for the thread
+    """
+    data = load_channel_threads()
+    # Prune expired threads
+    now = time.time()
+    data["threads"] = [
+        t for t in data["threads"]
+        if now - t.get("created_at_ts", 0) < CHANNEL_THREAD_MAX_AGE
+    ]
+    # Avoid duplicate registration
+    data["threads"] = [
+        t for t in data["threads"]
+        if t.get("thread_id") != thread_id
+    ]
+    data["threads"].append({
+        "thread_id": thread_id,
+        "channel_type": channel_type,
+        "channel_id": channel_id,
+        "session_id": session_id,
+        "context_file": context_file,
+        "label": label,
+        "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "created_at_ts": now,
+        "last_checked_message_id": "0",
+    })
+    save_channel_threads(data)
+    log.info(f"Registered {channel_type} thread: {thread_id} ({label})")
+
+
+def create_channel_thread(channel_id, first_message, thread_name):
+    """Post a message to a channel, then create a thread on it. Returns (thread_id, message_id) or (None, None)."""
+    # Post the first message
+    msg_result = discord_api(
+        "POST",
+        f"https://discord.com/api/v10/channels/{channel_id}/messages",
+        {"content": first_message[:2000]},
+    )
+    if not msg_result or "id" not in msg_result:
+        return None, None
+
+    message_id = msg_result["id"]
+
+    # Create thread on that message
+    thread_result = discord_api(
+        "POST",
+        f"https://discord.com/api/v10/channels/{channel_id}/messages/{message_id}/threads",
+        {
+            "name": thread_name[:100],
+            "auto_archive_duration": 1440,
+        },
+    )
+    if not thread_result or "id" not in thread_result:
+        return None, None
+
+    thread_id = thread_result["id"]
+    return thread_id, message_id
+
+
+def post_to_channel_thread(thread_id, content):
+    """Post a message (or chunked messages) to an existing thread."""
+    chunks = []
+    current = ""
+    for line in content.split("\n"):
+        if current and len(current) + len(line) + 1 > 1900:
+            chunks.append(current)
+            current = ""
+        current = f"{current}\n{line}" if current else line
+    if current:
+        chunks.append(current)
+
+    for chunk in chunks:
+        if len(chunk) > 2000:
+            chunk = chunk[:1997] + "..."
+        discord_api(
+            "POST",
+            f"https://discord.com/api/v10/channels/{thread_id}/messages",
+            {"content": chunk},
+        )
+        time.sleep(0.5)

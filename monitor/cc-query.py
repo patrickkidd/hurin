@@ -84,6 +84,9 @@ def parse_args():
 async def run_query(prompt: str, args) -> int:
     """Run the SDK query with Discord streaming and live steering. Returns exit code."""
 
+    # Force Max plan by clearing API key
+    os.environ.pop("ANTHROPIC_API_KEY", None)
+
     # Load Discord token for thread relay
     token = load_discord_token()
     log = logging.getLogger("cc-query")
@@ -112,13 +115,14 @@ async def run_query(prompt: str, args) -> int:
     else:
         log.warning("Failed to create Discord thread")
 
-    # Build SDK options
+    # Build SDK options - force Max plan by clearing API key
     env = {
-        "PATH": "/opt/homebrew/bin:"
+        "PATH": "/usr/local/bin:"
         + str(HOME / ".local/bin")
         + ":"
         + os.environ.get("PATH", ""),
     }
+
 
     options = ClaudeAgentOptions(
         model="claude-opus-4-6",

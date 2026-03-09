@@ -10,13 +10,13 @@
         <string>/opt/homebrew/bin/uv</string>
         <string>run</string>
         <string>--directory</string>
-        <string>/Users/hurin/.openclaw/monitor</string>
+        <string>/home/hurin/.openclaw/monitor</string>
         <string>python</string>
-        <string>/Users/hurin/.openclaw/monitor/task-daemon.py</string>
+        <string>/home/hurin/.openclaw/monitor/task-daemon.py</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/Users/hurin/.openclaw/monitor</string>
+    <string>/home/hurin/.openclaw/monitor</string>
 
     <key>KeepAlive</key>
     <true/>
@@ -25,15 +25,15 @@
     <true/>
 
     <key>StandardOutPath</key>
-    <string>/Users/hurin/.openclaw/monitor/daemon-stdout.log</string>
+    <string>/home/hurin/.openclaw/monitor/daemon-stdout.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/Users/hurin/.openclaw/monitor/daemon-stderr.log</string>
+    <string>/home/hurin/.openclaw/monitor/daemon-stderr.log</string>
 
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/opt/homebrew/bin:/Users/hurin/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <string>/opt/homebrew/bin:/home/hurin/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
         <key>HOME</key>
         <string>/Users/hurin</string>
     </dict>

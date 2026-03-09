@@ -36,7 +36,7 @@ python3 - "$1" <<'PYEOF'
 import json, subprocess, sys
 from datetime import datetime, timezone
 
-registry_path = "/Users/hurin/.openclaw/workspace-hurin/theapp/.clawdbot/active-tasks.json"
+registry_path = "/home/hurin/.openclaw/workspace-hurin/theapp/.clawdbot/active-tasks.json"
 data = json.load(open(registry_path))
 tasks = data.get("tasks", [])
 

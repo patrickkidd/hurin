@@ -4,6 +4,7 @@ auth*.json
 secrets.json
 identity/
 devices/
+git-crypt-key
 
 # === OpenClaw runtime/system (not our config) ===
 canvas/
@@ -42,10 +43,7 @@ monitor/review.log
 monitor/daemon.log
 monitor/daemon-stderr.log
 monitor/daemon-stdout.log
-monitor/failures/
-monitor/task-logs/
 monitor/kill-sentinels/
-monitor/review-failures/
 monitor/task-queue.json
 monitor/queue-prompts/
 monitor/evolution-actions-queue.json
@@ -57,13 +55,10 @@ monitor/*.before-fix
 team-lead/daemon.log
 team-lead/daemon-stderr.log
 team-lead/daemon-stdout.log
-team-lead/syntheses/
 team-lead/dedup-cache.json
 
 # === Co-founder runtime (ephemeral) ===
-co-founder/journal.md
 co-founder/cron.log
-co-founder/actions.log
 co-founder/sessions/
 
 # === Workspace personal/private artifacts ===
@@ -78,6 +73,11 @@ workspace-hurin/prod.dump
 
 # === Python ===
 .venv/
+
+# === Build artifacts / binaries ===
+lib/
+python-headers/
+qt/
 
 # === General ===
 *.lock

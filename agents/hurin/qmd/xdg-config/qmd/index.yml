@@ -1,0 +1,10 @@
+collections:
+  memory-root-hurin:
+    path: /home/hurin/.openclaw/workspace-hurin
+    pattern: MEMORY.md
+  memory-alt-hurin:
+    path: /home/hurin/.openclaw/workspace-hurin
+    pattern: memory.md
+  memory-dir-hurin:
+    path: /home/hurin/.openclaw/workspace-hurin/memory
+    pattern: "**/*.md"

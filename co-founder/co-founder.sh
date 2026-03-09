@@ -69,27 +69,29 @@ You have **${MAX_TURNS} turns** available. Use them. Do not rush to produce outp
 1. **Turn 1-3: Gather data.** Read project files, run shell commands (git log, gh pr list, find, wc -l, grep, etc.), explore the codebase. Collect concrete evidence.
 2. **Turn 4-6: Dig deeper.** Investigate specific areas that warrant attention. Read source files, check test coverage, analyze patterns. Follow threads that surprise you.
 3. **Turn 7+: Synthesize.** Write your briefing with specific citations — file paths, line numbers, PR numbers, commit hashes, concrete metrics.
-
-**Do NOT constrain your output length.** A 2000-word briefing with concrete evidence is better than a 500-word summary of vibes. Write as much as the analysis warrants. Be specific and cite your sources.
-
+**Keep it SHORT.** Aim for 300-500 words max. Patrick won't read ten pages. Be terse, specific, and punchy. One paragraph per section, bullet points for details, cite sources inline.
 ## Output Format
 
 Format your response for readability:
+- Keep each section to 1-2 short paragraphs maximum
 - Use **bold** for section labels
 - Use bullet points (- ) for items
 - Do NOT use markdown # headers
 - End with one uncomfortable question for Patrick
 
+## No Vague Theory
+
+Stay CONCRETE. Do NOT cite "family systems theory", "Bowen theory", or generic psychotherapy concepts — training data has no idea what those mean in context. If you cannot point to a specific file, line, commit, or data pattern, it is not actionable. Focus on what exists in THIS codebase, not what should exist according to textbooks.
 ## Quick Wins
 
 If your analysis surfaces anything that meets ALL of these criteria, propose it as an action:
 
 1. **Claude Code can fully implement it end-to-end** — no human judgment calls, no design decisions, no ambiguous scope
-2. **It delivers clear, concrete value** — fixes a real bug, removes dead code that causes confusion, adds a missing index that prevents a production issue, removes redundant operations, unblocks a stuck PR, or creates content that drives traffic/signups
+2. **It delivers clear, concrete value** — fixes a HIGH-PRIORITY bug (crash, data loss, broken feature) that causes confusion, adds a missing index that prevents a production issue, removes redundant operations, unblocks a stuck PR, or creates content that drives traffic/signups
 3. **The effort is genuinely trivial/small** — a focused CC session can ship it in one PR
 4. **You are highly confident it's correct** — you've read the relevant code and understand the change
 
-**Be thorough.** Every concrete finding in your briefing that has a clear mechanical fix should become an action. If you describe a problem with a known solution (dead code, missing index, redundant call, deprecated dependency with a drop-in replacement), propose it. Propose every action that genuinely clears this bar — whether that's zero or ten.
+**Be thorough.** Every concrete finding in your briefing that has a clear mechanical fix should become an action. If you describe a problem with a known solution (dead code, missing index, redundant call, deprecated dependency with a drop-in replacement), propose it. Propose every action that genuinely clears this bar — only propose the TOP 2-3 at most — Patrick has limited time.
 
 **Not quick wins:** speculative improvements, large-scale refactors requiring design decisions, test additions without a concrete bug, things requiring Patrick's product judgment, anything where you're unsure about the approach, "nice to have" architectural changes.
 
@@ -123,6 +125,7 @@ PROMPT_EOF
 # 4. Run Claude Code (agentic, multi-turn)
 # Unset CLAUDECODE to allow launching from within another CC session (e.g. /cofounder skill)
 unset CLAUDECODE
+unset ANTHROPIC_API_KEY
 echo "[$(date '+%Y-%m-%d %H:%M')] Calling Claude Code (max $MAX_TURNS turns)..."
 CC_JSON="$(cd "$THEAPP" && "$CLAUDE_BIN" -p \
     --model "$CLAUDE_MODEL" \

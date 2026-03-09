@@ -302,38 +302,57 @@ See [ADR-0002](adrs/ADR-0002-prompt-caching.md).
 
 ```
 ~/.openclaw/                          # This repo (patrickkidd/hurin)
+  .gitattributes                      # git-crypt encryption rules
   openclaw.json                       # Agent config, Discord bindings, model settings
   secrets.json                        # API keys (gitignored)
+  git-crypt-key                       # Symmetric encryption key (gitignored — BACK THIS UP)
   adrs/                               # Architecture Decision Records
+  chief-of-staff/                     # Opus meta-orchestrator
+    chief-of-staff.py                 # Main script
+    digests/                          # Strategic digests (encrypted)
   co-founder/                         # Co-founder briefing system
-    co-founder.sh                     # Main runner
+    co-founder.sh                     # Main runner (bash)
+    co-founder-sdk.py                 # Agent SDK runner (Python)
     lenses/                           # 9+ lens prompt files
-    journal.md                        # Persistent memory (1000 line cap)
-    briefings/                        # Full briefing archives
-    actions/                          # Parsed action JSON files
+    journal.md                        # Persistent memory (encrypted)
+    briefings/                        # Full briefing archives (encrypted)
+    actions/                          # Parsed action JSON files (encrypted)
+    memory/                           # Co-founder learned patterns (encrypted)
+  decisions/                          # Decision log
+    log.md                            # Strategic decisions (encrypted)
   monitor/                            # Task execution infrastructure
     task-daemon.py                    # Main daemon (Agent SDK, async Python)
+    task-cli.sh                       # CLI wrapper (task spawn/watch/kill/etc.)
     cc-query.py                       # Sync CC wrapper for Mode 1
     discord_relay.py                  # Discord thread streaming
-    review-prs.sh                     # Automated Claude code review
-    task-queue.json                   # Queue file (drained every 30s)
-    queue-prompts/                    # Prompt files for queued tasks
-    task-logs/                        # JSONL logs per task
-    task-events.jsonl                 # Event stream (consumed by team-lead)
-    kill-sentinels/                   # Write <id>.kill to terminate tasks
+    trust_ledger.py                   # Trust tracking module
+    board-reconcile.py                # GitHub project board reconciliation
+    task-logs/                        # JSONL logs per task (encrypted)
+    trust-ledger.json                 # Proposal accuracy tracking (encrypted)
+    channel-threads.json              # Discord thread registry (encrypted)
+    task-queue.json                   # Queue file (gitignored, ephemeral)
+    queue-prompts/                    # Prompt files for queued tasks (gitignored)
+    kill-sentinels/                   # Write <id>.kill to terminate tasks (gitignored)
+  skills/                             # OpenClaw skill definitions
+    cofounder/                        # /cofounder skill
+    cos/                              # /cos (chief of staff) skill
+    task/                             # /task skill
+    teamlead/                         # /teamlead skill
+    trust/                            # /trust skill
   team-lead/                          # Team lead daemon
     team-lead.py                      # Main daemon (async Python, Agent SDK)
     config.py                         # Thresholds, quiet hours, autonomy tier
-    syntheses/                        # Saved synthesis outputs
+    syntheses/                        # Saved synthesis outputs (encrypted)
   workspace-hurin/                    # hurin's workspace
     SOUL.md                           # Router role, triage rules, delegation protocol
     TOOLS.md                          # Local environment, commands, monitoring
     IDENTITY.md                       # Name, creature, vibe, emoji
     USER.md                           # Patrick's info
-    theapp/                           # Monorepo (familydiagram + btcopilot + fdserver)
+    scripts/                          # Operational scripts
+    theapp/                           # Monorepo (gitignored, checked out separately)
       .clawdbot/active-tasks.json     # Task registry
   workspace/                          # OpenClaw default workspace (templates)
-  launchagents/                       # LaunchAgent plist backups
+  launchagents/                       # Service config backups
   archive/                            # Archived beren/tuor configs, monitor-v1
 ```
 
@@ -420,3 +439,32 @@ tail ~/.openclaw/logs/cache-trace.jsonl    # Prompt cache health
 - **Sandbox mode:** off (trusted local machine).
 - **`bypassPermissions`** on Agent SDK calls — appropriate for local execution.
 - **This repo is public.** Never commit secrets, tokens, or API keys to tracked files.
+
+### git-crypt (Encrypted Files)
+
+This repo uses [git-crypt](https://github.com/AGWA/git-crypt) to encrypt sensitive operational data in-place. Source code, configs, skills, and architecture docs remain publicly readable. Briefings, syntheses, digests, telemetry, task logs, and the decision log are encrypted — anyone without the key sees binary blobs.
+
+See `.gitattributes` for the full list of encrypted paths.
+
+#### Key Backup & Restore
+
+The symmetric key is at `~/.openclaw/git-crypt-key` (gitignored). **Back it up alongside your other secrets:**
+
+```bash
+# Back up (copy next to your other secrets)
+cp ~/.openclaw/git-crypt-key ~/.ssh/git-crypt-key.bak
+
+# Restore on a new machine
+git clone git@github.com:patrickkidd/hurin.git ~/.openclaw
+git-crypt unlock /path/to/git-crypt-key
+```
+
+Without the key, encrypted files appear as binary blobs. With it, everything is transparently decrypted on checkout. There is no password — **the key file IS the secret.**
+
+**All secrets to back up:**
+
+| Secret | Location |
+|--------|----------|
+| SSH keys | `~/.ssh/` |
+| API keys | `~/.openclaw/secrets.json` |
+| git-crypt key | `~/.openclaw/git-crypt-key` |

@@ -1,0 +1,28 @@
+# === git-crypt: encrypted at rest, decrypted locally ===
+# These files are backed up in git but encrypted on the remote.
+# Anyone without the key sees binary blobs.
+
+# Telemetry & learning data
+monitor/trust-ledger.json filter=git-crypt diff=git-crypt
+monitor/channel-threads.json filter=git-crypt diff=git-crypt
+monitor/task-logs/** filter=git-crypt diff=git-crypt
+monitor/failures/** filter=git-crypt diff=git-crypt
+monitor/review-failures/** filter=git-crypt diff=git-crypt
+monitor/board-reconcile.log filter=git-crypt diff=git-crypt
+
+# Syntheses & digests
+team-lead/syntheses/** filter=git-crypt diff=git-crypt
+chief-of-staff/digests/** filter=git-crypt diff=git-crypt
+
+# Co-founder outputs (briefings, actions, journals, memory)
+co-founder/briefings/** filter=git-crypt diff=git-crypt
+co-founder/actions/** filter=git-crypt diff=git-crypt
+co-founder/memory/** filter=git-crypt diff=git-crypt
+co-founder/journal.md filter=git-crypt diff=git-crypt
+co-founder/actions.log filter=git-crypt diff=git-crypt
+
+# Decision log (may contain strategic details)
+decisions/log.md filter=git-crypt diff=git-crypt
+
+# Workspace telemetry
+workspace-hurin/HEARTBEAT.md filter=git-crypt diff=git-crypt

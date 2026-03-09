@@ -46,9 +46,13 @@ from discord_relay import (
     set_discord_token,
     get_bot_user_id,
     poll_discord_thread,
+    load_channel_threads,
+    save_channel_threads,
+    post_to_channel_thread,
     DISCORD_TASKS_CHANNEL_ID,
     DISCORD_QUICKWINS_CHANNEL_ID,
 )
+from trust_ledger import record_proposal, record_outcome, get_summary as trust_summary
 
 # ---------------------------------------------------------------------------
 # Paths & constants
@@ -535,6 +539,9 @@ async def run_task(entry, is_respawn=False, respawn_context=""):
     For respawns: resumes session or re-runs with failure context.
     For follow-ups: resumes session with new prompt.
     """
+    # Force Max plan by clearing API key
+    os.environ.pop("ANTHROPIC_API_KEY", None)
+
     task_id = entry["task_id"]
     repo = entry["repo"]
     description = entry.get("description", task_id)
@@ -624,6 +631,7 @@ async def run_task(entry, is_respawn=False, respawn_context=""):
         "prUrl": existing.get("prUrl") if existing else None,
         "issueNumber": int(issue_number) if issue_number else None,
         "session_id": session_id_to_resume or "",
+        "discordThreadId": entry.get("discordThreadId") or (existing.get("discordThreadId") if existing else None),
     }
     upsert_task(data, task_entry)
 
@@ -664,9 +672,11 @@ async def run_task(entry, is_respawn=False, respawn_context=""):
 
     # --- Build SDK options ---
     env = {
-        "GH_TOKEN": BOT_TOKEN,
-        "PATH": "/opt/homebrew/bin:" + str(HOME / ".local/bin") + ":" + os.environ.get("PATH", ""),
+        "PATH": "/usr/local/bin:" + str(HOME / ".local/bin") + ":" + os.environ.get("PATH", ""),
     }
+    # Only set GH_TOKEN if we have a bot token; otherwise let gh use system auth
+    if BOT_TOKEN:
+        env["GH_TOKEN"] = BOT_TOKEN
     # CLAUDECODE intentionally absent — prevents nested session detection
 
     options = ClaudeAgentOptions(
@@ -1055,6 +1065,86 @@ def monitor_open_prs():
                     f"--add-label cf-done --remove-label cf-pr-open 2>/dev/null")
             changed = True
 
+    # --- Track PR outcomes for trust ledger ---
+    for task in data.get("tasks", []):
+        if task["status"] not in ("done", "pr_open"):
+            continue
+        if task.get("_outcome_recorded"):
+            continue
+
+        pr_num = task.get("pr")
+        if not pr_num:
+            continue
+
+        repo_dir = task.get("repoDir", str(DEV_REPO))
+        tid = task["id"]
+
+        # Check PR state via gh
+        rc, out, _ = run(f"gh pr view {pr_num} --json state,mergedAt,closedAt", cwd=repo_dir)
+        if rc != 0:
+            continue
+        try:
+            pr_state = json.loads(out)
+        except json.JSONDecodeError:
+            continue
+
+        state = pr_state.get("state", "").upper()
+
+        if state == "MERGED":
+            # Record as spawn proposal that was correct (merged)
+            record_outcome(f"spawn:{tid}", "correct", detail=f"PR #{pr_num} merged")
+            task["_outcome_recorded"] = True
+            task["status"] = "done"
+            changed = True
+            log.info(f"  Trust ledger: {tid} PR #{pr_num} merged (correct)")
+
+            # Sync board item to Done
+            sync_project_board(task, pr_num, "Done")
+
+            # Close linked issue if PR didn't auto-close it
+            issue_num = task.get("issueNumber")
+            if issue_num:
+                repo = task.get("repo", "")
+                if repo:
+                    run(f"gh issue close {issue_num} --repo patrickkidd/{repo} 2>/dev/null")
+                    run(f"gh issue edit {issue_num} --repo patrickkidd/{repo} "
+                        f"--add-label cf-done --remove-label cf-pr-open 2>/dev/null")
+
+            # Notify in task thread
+            thread_id = task.get("discordThreadId")
+            if thread_id:
+                _discord_api(
+                    "POST",
+                    f"https://discord.com/api/v10/channels/{thread_id}/messages",
+                    {"content": f"✅ PR #{pr_num} was **merged**. Board synced to Done."},
+                )
+
+        elif state == "CLOSED":
+            record_outcome(f"spawn:{tid}", "wrong", detail=f"PR #{pr_num} closed without merge")
+            task["_outcome_recorded"] = True
+            task["status"] = "closed"
+            changed = True
+            log.info(f"  Trust ledger: {tid} PR #{pr_num} closed (wrong)")
+
+            # Sync board item back to Todo (closed PR = work not done)
+            sync_project_board(task, pr_num, "Todo")
+
+            # Update labels
+            issue_num = task.get("issueNumber")
+            if issue_num:
+                repo = task.get("repo", "")
+                if repo:
+                    run(f"gh issue edit {issue_num} --repo patrickkidd/{repo} "
+                        f"--remove-label cf-pr-open 2>/dev/null")
+
+            thread_id = task.get("discordThreadId")
+            if thread_id:
+                _discord_api(
+                    "POST",
+                    f"https://discord.com/api/v10/channels/{thread_id}/messages",
+                    {"content": f"❌ PR #{pr_num} was **closed** without merge. Board reverted to Todo."},
+                )
+
     # Clean up worktrees for done tasks
     for task in data.get("tasks", []):
         if task["status"] in ("done", "timed_out") and task.get("worktree") and Path(task["worktree"]).exists():
@@ -1190,6 +1280,9 @@ def check_master_ci():
 
     for repo in CI_FIX_REPOS:
         repo_dir = str(DEV_REPO / repo)
+
+        if not Path(repo_dir).exists():
+            continue
 
         if repo in running_fix_ids:
             continue
@@ -1372,6 +1465,216 @@ def check_thread_replies():
 
 
 # ---------------------------------------------------------------------------
+# Channel thread reply monitoring — COS, team-lead, co-founder
+# ---------------------------------------------------------------------------
+
+_channel_thread_last_seen = {}  # {thread_id: last_message_id}
+_channel_followup_running = set()  # thread_ids with active follow-ups
+
+
+def check_channel_thread_replies():
+    """Check registered channel threads (COS, team-lead, co-founder) for replies.
+
+    Unlike task thread replies which re-enter the task queue, channel thread
+    replies are handled by run_channel_followup() — a lightweight SDK session
+    that responds conversationally without worktrees, PRs, or git.
+    """
+    data = load_channel_threads()
+    bot_user_id = get_bot_user_id() if DISCORD_BOT_TOKEN else None
+    if not bot_user_id:
+        return []
+
+    followups = []
+
+    for entry in data.get("threads", []):
+        thread_id = entry.get("thread_id")
+        if not thread_id:
+            continue
+
+        # Skip if a follow-up is already running for this thread
+        if thread_id in _channel_followup_running:
+            continue
+
+        # Initialize last_seen on first encounter
+        if thread_id not in _channel_thread_last_seen:
+            init_result = _discord_api(
+                "GET",
+                f"https://discord.com/api/v10/channels/{thread_id}/messages?limit=1",
+            )
+            if init_result and isinstance(init_result, list) and init_result:
+                _channel_thread_last_seen[thread_id] = init_result[0]["id"]
+            else:
+                _channel_thread_last_seen[thread_id] = "0"
+            continue
+
+        last_seen = _channel_thread_last_seen[thread_id]
+
+        # Fetch new messages
+        result = _discord_api(
+            "GET",
+            f"https://discord.com/api/v10/channels/{thread_id}/messages?after={last_seen}&limit=10",
+        )
+        if not result or not isinstance(result, list) or not result:
+            continue
+
+        result.sort(key=lambda m: m["id"])
+
+        human_messages = []
+        for msg in result:
+            _channel_thread_last_seen[thread_id] = msg["id"]
+            author = msg.get("author", {})
+            if author.get("id") == bot_user_id or author.get("bot"):
+                continue
+            content = msg.get("content", "").strip()
+            if content:
+                human_messages.append(content)
+
+        if not human_messages:
+            continue
+
+        combined = "\n\n".join(human_messages)
+        log.info(f"Channel thread reply ({entry.get('channel_type')}): {combined[:80]}")
+
+        # Acknowledge in thread
+        _discord_api(
+            "POST",
+            f"https://discord.com/api/v10/channels/{thread_id}/messages",
+            {"content": "📩 **Processing your reply...** Resuming session with full context."},
+        )
+
+        followups.append({
+            "thread_id": thread_id,
+            "channel_type": entry.get("channel_type", ""),
+            "session_id": entry.get("session_id", ""),
+            "context_file": entry.get("context_file", ""),
+            "label": entry.get("label", ""),
+            "user_message": combined,
+        })
+
+    return followups
+
+
+async def run_channel_followup(followup):
+    """Run a lightweight SDK follow-up session for a channel thread reply.
+
+    No worktrees, no PRs, no git — just a conversational response using
+    the saved session context. Posts the response back to the thread.
+    """
+    from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient, ResultMessage
+
+    thread_id = followup["thread_id"]
+    channel_type = followup["channel_type"]
+    session_id = followup.get("session_id", "")
+    context_file = followup.get("context_file", "")
+    user_message = followup["user_message"]
+
+    _channel_followup_running.add(thread_id)
+    log.info(f"Running channel follow-up ({channel_type}) in thread {thread_id}")
+
+    try:
+        # Build prompt with context
+        context = ""
+        if context_file and Path(context_file).exists():
+            try:
+                context = Path(context_file).read_text()
+                if len(context) > 6000:
+                    context = context[:6000] + "\n...(truncated)"
+            except Exception:
+                pass
+
+        if session_id:
+            # Resume the session — SDK has full context
+            prompt = user_message
+        else:
+            # No session to resume — provide context in the prompt
+            type_labels = {
+                "cos": "Chief of Staff",
+                "teamlead": "Team Lead",
+                "cofounder": "Co-Founder",
+            }
+            role = type_labels.get(channel_type, channel_type)
+            prompt = (
+                f"You are the {role} for an AI agent system supporting Patrick's software development.\n\n"
+                f"## Previous Output\n\n{context}\n\n"
+                f"## Patrick's Reply\n\n{user_message}\n\n"
+                f"Respond conversationally. Be concise and actionable. "
+                f"You have access to the codebase and tools — investigate if needed."
+            )
+
+        # Force Max plan
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+
+        gh_token = ""
+        if BOT_TOKEN_FILE.exists():
+            gh_token = BOT_TOKEN_FILE.read_text().strip()
+
+        sdk_env = {
+            "PATH": "/usr/local/bin:" + str(HOME / ".local/bin") + ":" + os.environ.get("PATH", ""),
+            "HOME": str(HOME),
+            "CLAUDECODE": "",
+        }
+        if gh_token:
+            sdk_env["GH_TOKEN"] = gh_token
+
+        options = ClaudeAgentOptions(
+            model="claude-opus-4-6",
+            permission_mode="bypassPermissions",
+            cwd=str(DEV_REPO),
+            env=sdk_env,
+            cli_path=str(HOME / ".local/bin/claude"),
+            max_turns=8,
+            setting_sources=["project"],
+        )
+        if session_id:
+            options.resume = session_id
+
+        cc_output = ""
+        new_session_id = ""
+
+        try:
+            async with ClaudeSDKClient(options=options) as client:
+                await client.query(prompt)
+                async for message in client.receive_response():
+                    if isinstance(message, ResultMessage):
+                        cc_output = message.result or ""
+                        new_session_id = getattr(message, 'session_id', '') or getattr(client, 'session_id', '') or ''
+                        break
+        except Exception as e:
+            log.error(f"Channel follow-up SDK error: {e}")
+            _discord_api(
+                "POST",
+                f"https://discord.com/api/v10/channels/{thread_id}/messages",
+                {"content": f"❌ Follow-up failed: {type(e).__name__}"},
+            )
+            return
+
+        if not cc_output:
+            _discord_api(
+                "POST",
+                f"https://discord.com/api/v10/channels/{thread_id}/messages",
+                {"content": "⚠️ Empty response from follow-up session."},
+            )
+            return
+
+        # Post response to thread
+        post_to_channel_thread(thread_id, cc_output)
+
+        # Update session_id in the channel thread registry
+        if new_session_id:
+            ct_data = load_channel_threads()
+            for entry in ct_data.get("threads", []):
+                if entry.get("thread_id") == thread_id:
+                    entry["session_id"] = new_session_id
+                    break
+            save_channel_threads(ct_data)
+
+        log.info(f"Channel follow-up complete ({channel_type}), {len(cc_output)} chars")
+
+    finally:
+        _channel_followup_running.discard(thread_id)
+
+
+# ---------------------------------------------------------------------------
 # Main loop
 # ---------------------------------------------------------------------------
 
@@ -1428,6 +1731,15 @@ async def main_loop():
                     task_id = entry["task_id"]
                     log.info(f"Dequeued: {task_id} ({remaining} remaining)")
 
+                    # Record spawn proposal in trust ledger
+                    if not entry.get("follow_up_prompt"):
+                        record_proposal(
+                            "spawn",
+                            f"spawn:{task_id}",
+                            entry.get("description", task_id),
+                            metadata={"repo": entry.get("repo", "")},
+                        )
+
                     # Update action status if applicable
                     actions_file = entry.get("actions_file", "")
                     action_index = entry.get("action_index", 0)
@@ -1466,9 +1778,18 @@ async def main_loop():
             if loop_count % 5 == 0:
                 monitor_open_prs()
 
-            # --- Check thread replies (every 5th cycle = ~2.5 min) ---
+            # --- Check task thread replies (every 5th cycle = ~2.5 min) ---
             if loop_count % 5 == 2:
                 check_thread_replies()
+
+            # --- Check channel thread replies (every 5th cycle = ~2.5 min) ---
+            if loop_count % 5 == 3:
+                followups = check_channel_thread_replies()
+                for fu in followups:
+                    # Run channel follow-ups inline (they're conversational, not tasks)
+                    # Only run if no task is currently running
+                    if not has_running:
+                        await run_channel_followup(fu)
 
             # --- Stale task detection (every 10th cycle = ~5 min) ---
             if loop_count % 10 == 0:

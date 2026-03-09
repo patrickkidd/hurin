@@ -3,7 +3,7 @@
 # All paths, settings, and credentials in one place.
 
 # Ensure Homebrew tools (gh, jq, etc.) are on PATH for nohup/cron contexts
-export PATH="/opt/homebrew/bin:$HOME/.local/bin:$PATH"
+export PATH="/usr/local/bin:$HOME/.local/bin:$PATH"
 
 # GitHub auth — use patrickkidd-hurin bot account for all gh commands
 export GH_TOKEN="$(cat "$HOME/.openclaw/monitor/hurin-bot-token" 2>/dev/null)"
