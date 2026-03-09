@@ -50,6 +50,13 @@ BOT_TOKEN_FILE = HOME / ".openclaw/monitor/hurin-bot-token"
 # Update this once the channel exists, or create it first
 DISCORD_PLANNING_CHANNEL_ID = "1479984919353626674"  # #chief-of-staff
 
+# Knowledge base
+KNOWLEDGE_DIR = HOME / ".openclaw/knowledge"
+SPAWN_POLICY_FILE = KNOWLEDGE_DIR / "self/spawn-policy.json"
+TELEMETRY_FILE = KNOWLEDGE_DIR / "self/telemetry.jsonl"
+KB_INDEX = KNOWLEDGE_DIR / "index.md"
+CAPABILITY_GAPS = KNOWLEDGE_DIR / "self/capability-gaps.md"
+
 # Add monitor dir to path for discord_relay import
 sys.path.insert(0, str(HOME / ".openclaw/monitor"))
 from discord_relay import (
@@ -483,6 +490,96 @@ def load_previous_digest():
 
 
 # ---------------------------------------------------------------------------
+# Knowledge base data collection
+# ---------------------------------------------------------------------------
+
+
+def collect_spawn_policy():
+    """Read spawn policy for COS context."""
+    if not SPAWN_POLICY_FILE.exists():
+        return "No spawn policy configured yet."
+    try:
+        policy = json.loads(SPAWN_POLICY_FILE.read_text())
+        lines = [f"**Spawn Policy** (updated: {policy.get('last_updated', '?')})"]
+        for cat, data in policy.get("categories", {}).items():
+            lines.append(
+                f"  - {cat}: {data.get('autonomy', '?')} "
+                f"(accuracy={data.get('accuracy', 0)*100:.0f}%, "
+                f"n={data.get('total', 0)}, correct={data.get('correct', 0)})"
+            )
+        lines.append(f"  Default: {policy.get('default_autonomy', 'propose_only')}")
+        return "\n".join(lines)
+    except (json.JSONDecodeError, IOError):
+        return "Spawn policy file unreadable."
+
+
+def collect_kb_summary():
+    """Summarize KB index and entry counts."""
+    if not KNOWLEDGE_DIR.exists():
+        return "Knowledge base not initialized."
+    lines = ["**Knowledge Base Summary:**"]
+    for subdir in ["domain", "market", "technical", "strategy", "self", "users"]:
+        path = KNOWLEDGE_DIR / subdir
+        if path.exists():
+            files = list(path.glob("*.md")) + list(path.glob("*.json"))
+            lines.append(f"  - {subdir}/: {len(files)} entries")
+        else:
+            lines.append(f"  - {subdir}/: (empty)")
+    return "\n".join(lines)
+
+
+def collect_telemetry_summary():
+    """Summarize recent telemetry entries."""
+    if not TELEMETRY_FILE.exists():
+        return "No telemetry data yet."
+    try:
+        entries = []
+        for line in TELEMETRY_FILE.read_text().splitlines()[-50:]:
+            if line.strip():
+                entries.append(json.loads(line))
+    except (json.JSONDecodeError, IOError):
+        return "Telemetry file unreadable."
+
+    if not entries:
+        return "Empty telemetry."
+
+    by_type = {}
+    for e in entries:
+        t = e.get("type", "unknown")
+        by_type.setdefault(t, []).append(e)
+
+    lines = ["**Recent Telemetry:**"]
+    for t, items in by_type.items():
+        lines.append(f"  - {t}: {len(items)} entries")
+        if t == "compute_roi" and items:
+            latest = items[-1]
+            lines.append(
+                f"    ROI ratio: {latest.get('roi_ratio', '?')} "
+                f"(merged: {latest.get('merged_minutes', 0):.0f}min, "
+                f"discarded: {latest.get('discarded_minutes', 0):.0f}min)"
+            )
+        elif t == "master_topics" and items:
+            latest = items[-1]
+            topics = latest.get("topics", {})
+            top = sorted(topics.items(), key=lambda x: -x[1])[:5]
+            lines.append(f"    Top topics: {', '.join(f'{k}({v})' for k,v in top)}")
+    return "\n".join(lines)
+
+
+def collect_capability_gaps():
+    """Read capability gaps from session learner."""
+    if not CAPABILITY_GAPS.exists():
+        return "No capability gap analysis yet."
+    try:
+        content = CAPABILITY_GAPS.read_text()
+        if len(content) > 1500:
+            content = content[:1500] + "\n...(truncated)"
+        return content
+    except IOError:
+        return "Capability gaps file unreadable."
+
+
+# ---------------------------------------------------------------------------
 # Main: build prompt, run via Agent SDK, post digest
 # ---------------------------------------------------------------------------
 
@@ -503,6 +600,12 @@ async def run_digest():
     master_activity = fetch_master_activity(days=7)
     service_health = collect_service_health()
     previous_digest = load_previous_digest()
+
+    # New: KB + policy + telemetry context
+    spawn_policy = collect_spawn_policy()
+    kb_summary = collect_kb_summary()
+    telemetry_summary = collect_telemetry_summary()
+    capability_gaps = collect_capability_gaps()
 
     prompt = f"""You are the Chief of Staff for an AI agent system supporting Patrick's software development.
 
@@ -525,6 +628,20 @@ Patrick is a solo founder building a personal app MVP (familydiagram + btcopilot
 {task_stats}
 
 {action_outcomes}
+
+## Spawn Policy (per-category autonomy)
+
+{spawn_policy}
+
+## Knowledge Base
+
+{kb_summary}
+
+{telemetry_summary}
+
+## Capability Gaps (from CC session analysis)
+
+{capability_gaps}
 
 ## Team-Lead Syntheses (last 4 days)
 
@@ -569,6 +686,12 @@ Evaluate each component:
 
 **TOP 3 RECOMMENDATIONS** (numbered, specific)
 One sentence each. Mix of product and system improvements. Only things that are actionable THIS WEEK.
+
+**SYSTEM EVOLUTION** (2-3 bullets)
+- Is the knowledge base growing? Are entries being updated (not just appended)?
+- Are spawn policy categories graduating or stagnating?
+- What should the system research next? (identify knowledge gaps)
+- Any self-repair proposals? (infrastructure fixes the system should make autonomously)
 
 **THE UNCOMFORTABLE QUESTION**
 One question Patrick probably doesn't want to think about but should. Could be about product strategy, agent ROI, technical debt, market timing, or resource allocation.

@@ -132,3 +132,169 @@ def get_pending(category=None):
         and (category is None or e["category"] == category)
     ]
     return entries
+
+
+# ---------------------------------------------------------------------------
+# Task classification + spawn policy engine
+# ---------------------------------------------------------------------------
+
+SPAWN_POLICY_FILE = Path.home() / ".openclaw/knowledge/self/spawn-policy.json"
+
+# Keywords for classifying task descriptions into categories
+_CATEGORY_KEYWORDS = {
+    "ci_fix": ["ci", "ci:", "fix ci", "ci fail", "ci pass", "github actions"],
+    "test_infra": ["mock", "fixture", "test infra", "pytest", "test setup"],
+    "dead_code": ["dead code", "unused", "remove dead", "cleanup dead"],
+    "refactoring": ["refactor", "cleanup", "reorganize", "rename", "move to"],
+    "bugfix": ["fix bug", "bugfix", "crash", "error handling", "fix:", "hotfix"],
+    "feature": ["add", "implement", "create", "new feature", "support for"],
+    "infrastructure": ["deploy", "config", "infra", "systemd", "service", "openclaw"],
+    "docs": ["doc", "readme", "comment", "docstring"],
+}
+
+
+def classify_task(description, files_changed=None):
+    """Classify a task description into a spawn policy category.
+
+    Returns category string. Uses keyword matching on description + file paths.
+    """
+    desc = description.lower()
+    files_str = " ".join(files_changed or []).lower()
+    combined = f"{desc} {files_str}"
+
+    # Score each category
+    scores = {}
+    for cat, keywords in _CATEGORY_KEYWORDS.items():
+        scores[cat] = sum(1 for kw in keywords if kw in combined)
+
+    best = max(scores, key=scores.get) if scores else "other"
+    return best if scores.get(best, 0) > 0 else "other"
+
+
+def _load_spawn_policy():
+    """Load spawn policy JSON."""
+    if not SPAWN_POLICY_FILE.exists():
+        return None
+    try:
+        return json.loads(SPAWN_POLICY_FILE.read_text())
+    except (json.JSONDecodeError, IOError):
+        return None
+
+
+def _save_spawn_policy(policy):
+    """Save spawn policy JSON."""
+    SPAWN_POLICY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    SPAWN_POLICY_FILE.write_text(json.dumps(policy, indent=2))
+
+
+def get_spawn_autonomy(category):
+    """Look up autonomy level for a category from spawn policy.
+
+    Returns: "auto_spawn", "propose_only", or "blocked"
+    """
+    policy = _load_spawn_policy()
+    if not policy:
+        return "propose_only"  # safe default
+
+    cat_data = policy.get("categories", {}).get(category)
+    if not cat_data:
+        return policy.get("default_autonomy", "propose_only")
+
+    return cat_data.get("autonomy", "propose_only")
+
+
+def update_spawn_policy():
+    """Recalculate spawn policy from trust ledger data.
+
+    Applies graduation rules:
+      - >= 80% accuracy over 5+ proposals → auto_spawn
+      - < 40% accuracy over 5+ proposals → blocked
+      - Otherwise → propose_only
+
+    Returns list of changes made (for logging/notification).
+    """
+    policy = _load_spawn_policy()
+    if not policy:
+        # Initialize from scratch
+        policy = {
+            "last_updated": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "categories": {},
+            "default_autonomy": "propose_only",
+            "graduation_threshold": 0.80,
+            "graduation_min_proposals": 5,
+            "demotion_threshold": 0.40,
+            "demotion_min_proposals": 5,
+        }
+
+    grad_threshold = policy.get("graduation_threshold", 0.80)
+    grad_min = policy.get("graduation_min_proposals", 5)
+    demote_threshold = policy.get("demotion_threshold", 0.40)
+    demote_min = policy.get("demotion_min_proposals", 5)
+
+    # Classify all resolved spawn entries by category
+    data = _load()
+    cat_stats = {}  # category -> {correct, partial, wrong, failed, total}
+
+    for entry in data["entries"]:
+        if entry["category"] != "spawn" or entry.get("outcome") is None:
+            continue
+        cat = classify_task(entry.get("description", ""))
+        if cat not in cat_stats:
+            cat_stats[cat] = {"correct": 0, "partial": 0, "wrong": 0, "failed": 0, "total": 0}
+        cat_stats[cat]["total"] += 1
+        outcome = entry["outcome"]
+        if outcome in cat_stats[cat]:
+            cat_stats[cat][outcome] += 1
+
+    changes = []
+
+    for cat, stats in cat_stats.items():
+        total = stats["total"]
+        accuracy = (stats["correct"] + 0.5 * stats["partial"]) / total if total > 0 else 0.0
+
+        old_autonomy = policy.get("categories", {}).get(cat, {}).get("autonomy", "propose_only")
+
+        # Apply graduation rules
+        if total >= grad_min and accuracy >= grad_threshold:
+            new_autonomy = "auto_spawn"
+        elif total >= demote_min and accuracy < demote_threshold:
+            new_autonomy = "blocked"
+        else:
+            new_autonomy = "propose_only"
+
+        if old_autonomy != new_autonomy:
+            changes.append({
+                "category": cat,
+                "old": old_autonomy,
+                "new": new_autonomy,
+                "accuracy": round(accuracy, 3),
+                "total": total,
+            })
+
+        policy.setdefault("categories", {})[cat] = {
+            "description": _CATEGORY_KEYWORDS.get(cat, [""])[0] if cat in _CATEGORY_KEYWORDS else cat,
+            "autonomy": new_autonomy,
+            "accuracy": round(accuracy, 3),
+            "total": total,
+            "correct": stats["correct"],
+            "wrong": stats["wrong"],
+            "graduation_rule": f">= {grad_threshold*100:.0f}% over {grad_min}+ proposals",
+        }
+
+    policy["last_updated"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    _save_spawn_policy(policy)
+
+    return changes
+
+
+def store_prompt_text(proposal_id, prompt_text):
+    """Store the full prompt text in the trust ledger entry metadata.
+
+    Used for prompt archaeology — correlating prompt characteristics with outcomes.
+    """
+    data = _load()
+    for entry in data["entries"]:
+        if entry["proposal_id"] == proposal_id:
+            entry.setdefault("metadata", {})["prompt_text"] = prompt_text[:5000]  # cap size
+            break
+    _save(data)

@@ -40,6 +40,10 @@ JOURNAL_CONTEXT_LINES = 100
 MAX_TURNS = 10
 CLAUDE_MODEL = "claude-opus-4-6"
 
+# Knowledge base
+KNOWLEDGE_DIR = HOME / ".openclaw/knowledge"
+RESEARCH_LOG = KNOWLEDGE_DIR / "research-log.md"
+
 # Discord
 SECRETS_FILE = HOME / ".openclaw/secrets.json"
 DISCORD_CHANNEL_ID = "1476739270663213197"
@@ -140,6 +144,42 @@ def fetch_master_activity(days=7):
             pass
 
     return activity
+
+
+def _load_kb_context(lens_name):
+    """Load relevant KB entries based on the lens type."""
+    # Map lens names to KB directories they should read
+    lens_kb_map = {
+        "market-research": ["market"],
+        "product-vision": ["users", "market"],
+        "architecture": ["technical"],
+        "evolution": ["technical", "self"],
+        "wild-ideas": ["strategy", "market"],
+        "customer-support": ["users"],
+        "training-programs": ["market"],
+        "website-audit": ["market", "users"],
+        "project-pulse": ["strategy", "self"],
+        "process-retro": ["self", "technical"],
+    }
+    dirs = lens_kb_map.get(lens_name, ["strategy"])
+
+    context_parts = []
+    for subdir in dirs:
+        kb_path = KNOWLEDGE_DIR / subdir
+        if not kb_path.exists():
+            continue
+        for f in sorted(kb_path.glob("*.md"))[:5]:  # Cap to 5 files per dir
+            try:
+                content = f.read_text()
+                if len(content) > 2000:
+                    content = content[:2000] + "\n...(truncated)"
+                context_parts.append(f"### {subdir}/{f.name}\n{content}\n")
+            except Exception:
+                continue
+
+    if not context_parts:
+        return "No existing KB entries for this lens yet."
+    return "\n".join(context_parts)
 
 
 def extract_actions_json(text):
@@ -380,6 +420,9 @@ async def run_lens(lens_name):
     else:
         master_summary = "No direct master commits in the last 7 days.\n"
 
+    # 2c. Load relevant KB entries for this lens
+    kb_context = _load_kb_context(lens_name)
+
     # 3. Assemble full prompt (same structure as co-founder.sh)
     prompt = f"""{lens_prompt}
 
@@ -400,6 +443,12 @@ This work does NOT go through the task daemon or create PRs.
 Do NOT propose actions that duplicate or conflict with recently committed work.
 
 {master_summary}
+
+## Existing Knowledge Base (read before proposing anything)
+
+The system maintains a knowledge base at {KNOWLEDGE_DIR}/. Read relevant entries to avoid duplicating known information. After your analysis, write NEW findings back to the appropriate KB file.
+
+{kb_context}
 
 ## Key Project Locations
 
@@ -468,6 +517,19 @@ If something genuinely qualifies, add a ```proposed-actions code block at the ve
 ```
 
 Every action requires Patrick's approval before spawning. There is no auto-spawn tier.
+
+## Knowledge Base Updates
+
+After your analysis, write any NEW findings to the appropriate KB file:
+- Market intelligence → `{KNOWLEDGE_DIR}/market/` (competitors, conferences, pricing)
+- Domain knowledge → `{KNOWLEDGE_DIR}/domain/` (Bowen theory, genograms, clinical workflow)
+- Technical insights → `{KNOWLEDGE_DIR}/technical/` (patterns, architectures)
+- User/community signals → `{KNOWLEDGE_DIR}/users/` (communities, needs)
+- Strategy → `{KNOWLEDGE_DIR}/strategy/` (experiments, opportunities)
+
+Use the Write tool to create or update files. Include `Last verified: {datetime.now().strftime('%Y-%m-%d')}` in each entry. Do NOT duplicate what's already in the KB — read first, then add only new information.
+
+Also check `{RESEARCH_LOG}` for unfilled research topics. If your lens covers one, fill it in.
 
 **spawn_prompt quality bar:** It must be a complete, self-contained prompt that another CC instance could execute cold — specific files, specific changes, specific acceptance criteria. If you can't write a crisp spawn_prompt, the action isn't ready.
 """

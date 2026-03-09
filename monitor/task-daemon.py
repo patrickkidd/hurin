@@ -52,7 +52,10 @@ from discord_relay import (
     DISCORD_TASKS_CHANNEL_ID,
     DISCORD_QUICKWINS_CHANNEL_ID,
 )
-from trust_ledger import record_proposal, record_outcome, get_summary as trust_summary
+from trust_ledger import (
+    record_proposal, record_outcome, get_summary as trust_summary,
+    update_spawn_policy, store_prompt_text,
+)
 
 # ---------------------------------------------------------------------------
 # Paths & constants
@@ -1145,6 +1148,18 @@ def monitor_open_prs():
                     {"content": f"❌ PR #{pr_num} was **closed** without merge. Board reverted to Todo."},
                 )
 
+    # Update spawn policy after recording outcomes
+    if changed:
+        try:
+            policy_changes = update_spawn_policy()
+            for pc in policy_changes:
+                log.info(
+                    f"  Spawn policy: {pc['category']} {pc['old']} -> {pc['new']} "
+                    f"(accuracy={pc['accuracy']}, n={pc['total']})"
+                )
+        except Exception as e:
+            log.warning(f"  Spawn policy update failed: {e}")
+
     # Clean up worktrees for done tasks
     for task in data.get("tasks", []):
         if task["status"] in ("done", "timed_out") and task.get("worktree") and Path(task["worktree"]).exists():
@@ -1739,6 +1754,16 @@ async def main_loop():
                             entry.get("description", task_id),
                             metadata={"repo": entry.get("repo", "")},
                         )
+                        # Store full prompt text for prompt archaeology
+                        prompt_file = entry.get("prompt_file", "")
+                        if prompt_file and Path(prompt_file).exists():
+                            try:
+                                store_prompt_text(
+                                    f"spawn:{task_id}",
+                                    Path(prompt_file).read_text(),
+                                )
+                            except Exception:
+                                pass
 
                     # Update action status if applicable
                     actions_file = entry.get("actions_file", "")

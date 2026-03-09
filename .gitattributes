@@ -24,5 +24,9 @@ co-founder/actions.log filter=git-crypt diff=git-crypt
 # Decision log (may contain strategic details)
 decisions/log.md filter=git-crypt diff=git-crypt
 
+# Knowledge base (self-learning data encrypted, research content public)
+knowledge/self/** filter=git-crypt diff=git-crypt
+monitor/processed-sessions.json filter=git-crypt diff=git-crypt
+
 # Workspace telemetry
 workspace-hurin/HEARTBEAT.md filter=git-crypt diff=git-crypt

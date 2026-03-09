@@ -1,6 +1,8 @@
 # hurin — OpenClaw Agent Deployment
 
-This is the configuration repo for **hurin**, an [OpenClaw](https://openclaw.ai) agent deployment running on a Mac Mini M4 (16GB RAM). It drives a 2-tier AI development team that autonomously implements features, reviews PRs, and provides strategic briefings for the [Family Diagram](https://alaskafamilysystems.com) product suite.
+This is the configuration repo for **hurin**, an [OpenClaw](https://openclaw.ai) agent deployment running on a Linux VPS (2GB RAM). It drives a 2-tier AI development team that autonomously implements features, reviews PRs, and provides strategic briefings for the [Family Diagram](https://alaskafamilysystems.com) product suite.
+
+**New here? Read [`QUICKSTART.md`](QUICKSTART.md)** — what to do next, first week checklist, daily workflow.
 
 ## What This Repo Contains
 
@@ -24,7 +26,7 @@ A 2-tier agent architecture where a cheap, fast router delegates all code intell
 Patrick (Discord)
   |
   v
-OpenClaw Gateway (LaunchAgent, port 18789)
+OpenClaw Gateway (systemd service, port 18789)
   |
   v
 hurin (MiniMax M2.5, ~$0.01/message)
@@ -42,7 +44,7 @@ hurin (MiniMax M2.5, ~$0.01/message)
   +-- Co-Founder System (cron, 9 lenses)
   |     claude -p -> strategic briefings -> #co-founder channel
   |
-  +-- Team Lead Daemon (LaunchAgent)
+  +-- Team Lead Daemon (systemd service)
         Monitors GitHub + task events -> metrics -> synthesis
         Auto-spawns automatable tasks toward MVP goals
 ```
@@ -58,7 +60,7 @@ An earlier 3-tier design (hurin -> beren/tuor coordinators -> Claude Code) had a
 | hurin (router) | MiniMax M2.5 | ~$0.01/message ($3-27/month) |
 | Claude Code (brain) | Opus 4.6 | $0 (Max plan CLI) |
 | Co-founder briefings | Opus 4.6 | $0 (Max plan CLI) |
-| Team lead synthesis | Sonnet 4.6 | $0 (Max plan CLI) |
+| Team lead synthesis | Opus 4.6 | $0 (Max plan CLI) |
 | PR reviews | Opus 4.6 | $0 (Max plan CLI) |
 
 All intelligence work is $0. The only API cost is hurin's routing decisions on MiniMax M2.5.
@@ -67,17 +69,17 @@ All intelligence work is $0. The only API cost is hurin's routing decisions on M
 
 ## Runtime Components
 
-Three LaunchAgents and two cron jobs form the runtime:
+Three Systemd Services and two cron jobs form the runtime:
 
-### LaunchAgents
+### Systemd Services
 
 | Label | Script | Role |
 |-------|--------|------|
-| `ai.openclaw.gateway` | `openclaw gateway` | OpenClaw proxy on port 18789 (loopback) |
-| `ai.openclaw.taskdaemon` | `monitor/task-daemon.py` | Drains task queue, executes CC tasks via Agent SDK |
-| `ai.openclaw.teamlead` | `team-lead/team-lead.py` | Monitors GitHub, computes metrics, synthesizes hourly, auto-spawns tasks |
+| `openclaw-gateway` | `openclaw gateway` | OpenClaw proxy on port 18789 (loopback) |
+| `openclaw-taskdaemon` | `monitor/task-daemon.py` | Drains task queue, executes CC tasks via Agent SDK |
+| `openclaw-teamlead` | `team-lead/team-lead.py` | Monitors GitHub, computes metrics, synthesizes weekly, auto-spawns tasks |
 
-Restart any with: `launchctl kickstart -k gui/501/ai.openclaw.<label>`
+Restart any with: `systemctl --user restart openclaw-<name>`
 
 ### Cron
 
@@ -161,7 +163,7 @@ For every message, hurin asks: *"Can I answer this with `exec` commands I alread
 - **No** → delegate to CC via `cc-query.py` or `task spawn`
 - **Not sure** → delegate to CC (cost is $0)
 
-### Config Tuning (16GB RAM)
+### Config Tuning (2GB RAM VPS)
 
 ```json
 {
@@ -172,7 +174,7 @@ For every message, hurin asks: *"Can I answer this with `exec` commands I alread
 }
 ```
 
-- `maxConcurrent: 2` — prevents swap thrashing
+- `maxConcurrent: 2` — prevents swap thrashing on 2GB VPS
 - `thinkingDefault: "off"` — hurin doesn't need reasoning, saves tokens
 - Idle session reset at 15 minutes bounds context growth costs
 
@@ -184,14 +186,17 @@ A scheduled strategic briefing system that runs Claude Code through different "l
 
 ### How It Works
 
-1. Cron triggers `co-founder.sh <lens>`
+1. Cron triggers `co-founder-sdk.py <lens>` (or on-demand via `/cofounder`)
 2. Reads the lens prompt from `lenses/<name>.md`
-3. Feeds the last 100 lines of `journal.md` for continuity
-4. Runs `claude -p --model opus --max-turns 10` (multi-turn agentic: gather data, dig deeper, synthesize)
-5. Saves the full briefing to `briefings/<lens>-<date>.md`
-6. Appends to `journal.md` (capped at 1000 lines)
-7. Extracts structured action items (if any)
-8. Posts to Discord `#co-founder` (split at 1900 chars)
+3. Loads relevant KB entries from `knowledge/` (domain, market, etc.)
+4. Feeds the last 100 lines of `journal.md` for continuity
+5. Fetches recent master commit activity (avoids conflicting proposals)
+6. Runs Agent SDK `query()` with Opus 4.6, 10-turn budget
+7. Saves the full briefing to `briefings/<lens>-<date>.md`
+8. Appends to `journal.md` (capped at 1000 lines)
+9. Extracts structured action items (if any)
+10. Posts to Discord `#co-founder` (split at 1900 chars)
+11. **NEW:** Writes new research findings back to `knowledge/`
 
 ### Lens Rotation
 
@@ -233,7 +238,7 @@ A management layer that sits between strategy (co-founder briefings) and executi
 - **Polls GitHub** — PRs, CI, issues, Project #4 state every 15 min (business hours only)
 - **Computes metrics** — fuzzy goal completion %, velocity, cycle time, success rate
 - **Detects anomalies** — stale PRs, broken CI, stuck tasks, goal regression, velocity stalls
-- **Synthesizes hourly** — Agent SDK `query()` with Sonnet 4.6, 3-turn budget
+- **Synthesizes weekly** — Agent SDK `query()` with Opus 4.6, 10-turn budget (Monday 9 AM AKST)
 - **Auto-spawns tasks** — 100% automatable tasks that map to MVP goals (Tier 1)
 - **Morning brief** — first synthesis after 7AM summarizes overnight events
 
@@ -259,7 +264,7 @@ Effort labels (`effort:large` = 3x, `effort:medium` = 2x, `effort:small` = 1x) a
 | **2** | Also: reorder queue, spawn follow-ups on stale PRs, flag blockers, kill stuck tasks |
 | **3** | Full queue management: spawn human-in-loop tasks, reprioritize based on goal risk, decompose large tasks |
 
-Currently running at Tier 1. Tier escalation via `autonomy_tier` in `team-lead/config.py`.
+Currently running at Tier 1 with spawn policy engine governing per-category autonomy. See Self-Evolving System section above.
 
 ### Proactive Velocity Features
 
@@ -269,6 +274,52 @@ Currently running at Tier 1. Tier escalation via `autonomy_tier` in `team-lead/c
 - **Quick win mining** — scans open issues, TODOs, and briefings for small automatable improvements
 
 See [ADR-0006](adrs/ADR-0006-team-lead-daemon.md).
+
+---
+
+## Self-Evolving System
+
+A self-improvement layer that gives the agent system perception, memory, reasoning, and adaptation. See [ADR-0007](adrs/ADR-0007-self-evolving-system.md).
+
+### Knowledge Base (`knowledge/`)
+
+Structured memory across 6 domains: `domain/`, `market/`, `technical/`, `strategy/`, `self/`, `users/`. Co-founder lenses read relevant KB entries before analysis and write NEW findings back. Seeded from trust ledger analysis, CC session learnings, and prompt archaeology.
+
+### Spawn Policy Engine
+
+Per-category autonomy computed from trust ledger accuracy. Categories auto-graduate (>=80% over 5+) to `auto_spawn` or get demoted (<40% over 5+) to `blocked`. Default is `propose_only`.
+
+Team-lead uses the policy engine when deciding whether to auto-spawn, propose, or block each candidate. Task daemon updates the policy after every PR outcome.
+
+### Telemetry (`monitor/telemetry.py`)
+
+Passive signal collection running every 15 min in team-lead:
+- PR review latency (time to merge/close)
+- Master commit topic clustering (prevents overlap with Patrick's work)
+- Compute ROI (Opus minutes on merged vs discarded)
+- Discord attention signals (reply counts as engagement proxy)
+
+### Learning Loops
+
+- **Session Learner** (`monitor/session_learner.py`): Analyzes Patrick's interactive CC sessions. Every manual session is a signal that hurin failed to handle something. Extracts capability gaps.
+- **Prompt Archaeology** (`monitor/analyze_prompts.py`): Compares merged vs closed PR prompt characteristics. Identifies what makes a good spawn prompt.
+- Both run weekly after team-lead synthesis.
+
+### Skills
+
+- `/research <topic>` — Targeted web research, writes findings to KB
+- `/status` — System health + spawn policy + KB summary + telemetry highlights
+
+### Autonomy Tiers
+
+| Tier | Actions | Examples |
+|------|---------|---------|
+| 0 | Fully autonomous | KB updates, telemetry, policy recalc |
+| 1 | Autonomous + notify | auto_spawn tasks, research → KB |
+| 2 | Propose + wait | propose_only tasks, experiments |
+| 3 | Never autonomous | Merge, push, external comms |
+
+Categories graduate between tiers as accuracy improves.
 
 ---
 
@@ -325,17 +376,34 @@ See [ADR-0002](adrs/ADR-0002-prompt-caching.md).
     task-cli.sh                       # CLI wrapper (task spawn/watch/kill/etc.)
     cc-query.py                       # Sync CC wrapper for Mode 1
     discord_relay.py                  # Discord thread streaming
-    trust_ledger.py                   # Trust tracking module
+    trust_ledger.py                   # Trust tracking + spawn policy engine
+    telemetry.py                      # Passive signal collection
+    session_learner.py                # CC session transcript analyzer
+    analyze_prompts.py                # Prompt archaeology
     board-reconcile.py                # GitHub project board reconciliation
+    feedback.py                       # Task outcome capture
     task-logs/                        # JSONL logs per task (encrypted)
     trust-ledger.json                 # Proposal accuracy tracking (encrypted)
     channel-threads.json              # Discord thread registry (encrypted)
     task-queue.json                   # Queue file (gitignored, ephemeral)
     queue-prompts/                    # Prompt files for queued tasks (gitignored)
     kill-sentinels/                   # Write <id>.kill to terminate tasks (gitignored)
+  knowledge/                          # Knowledge base (self-evolving system)
+    domain/                           # Bowen theory, genograms
+    market/                           # Competitors, conferences, AI therapy
+    technical/                        # Agent patterns, PR patterns
+    strategy/                         # MVP path, experiments
+    self/                             # Spawn policy, telemetry, capability gaps
+    users/                            # Communities, signals
+    index.md                          # Structure + staleness policy
+    research-log.md                   # Research agenda
+  drafts/                             # Content drafts (COS references)
+  analyses/                           # Analysis outputs
   skills/                             # OpenClaw skill definitions
     cofounder/                        # /cofounder skill
     cos/                              # /cos (chief of staff) skill
+    research/                         # /research skill (KB research)
+    status/                           # /status skill (system dashboard)
     task/                             # /task skill
     teamlead/                         # /teamlead skill
     trust/                            # /trust skill
@@ -352,7 +420,7 @@ See [ADR-0002](adrs/ADR-0002-prompt-caching.md).
     theapp/                           # Monorepo (gitignored, checked out separately)
       .clawdbot/active-tasks.json     # Task registry
   workspace/                          # OpenClaw default workspace (templates)
-  launchagents/                       # Service config backups
+  systemd/                            # Service unit file backups
   archive/                            # Archived beren/tuor configs, monitor-v1
 ```
 
@@ -396,8 +464,8 @@ openclaw channels status --probe  # Live Discord connectivity
 
 ```bash
 openclaw gateway restart
-launchctl kickstart -k gui/501/ai.openclaw.taskdaemon
-launchctl kickstart -k gui/501/ai.openclaw.teamlead
+systemctl --user restart openclaw-taskdaemon
+systemctl --user restart openclaw-teamlead
 ```
 
 ### Monitor Tasks
@@ -429,6 +497,7 @@ tail ~/.openclaw/logs/cache-trace.jsonl    # Prompt cache health
 | [ADR-0004](adrs/ADR-0004-co-founder-system.md) | Accepted | Co-founder strategic briefing system (9 lenses, journal memory) |
 | [ADR-0005](adrs/ADR-0005-action-system.md) | Accepted | Quality-gated action pipeline with approval flow |
 | [ADR-0006](adrs/ADR-0006-team-lead-daemon.md) | Accepted | Team lead daemon: metrics, synthesis, auto-spawning |
+| [ADR-0007](adrs/ADR-0007-self-evolving-system.md) | Accepted | Self-evolving system: KB, telemetry, spawn policy, learning loops |
 
 ---
 

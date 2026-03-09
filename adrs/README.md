@@ -12,6 +12,7 @@ Cross-project architectural decisions affecting both btcopilot and familydiagram
 | [ADR-0004](ADR-0004-co-founder-system.md) | Accepted | Co-founder strategic briefing system: 9 rotating lenses, journal memory, action pipeline |
 | [ADR-0005](ADR-0005-action-system.md) | Accepted | Quality-gated action pipeline: GitHub Issues as source of truth, approval-required spawning |
 | [ADR-0006](ADR-0006-team-lead-daemon.md) | Accepted | Team lead daemon: metrics engine, hourly synthesis, proactive auto-spawning toward MVP goals |
+| [ADR-0007](ADR-0007-self-evolving-system.md) | Accepted | Self-evolving agent system: KB, telemetry, spawn policy engine, session learner, prompt archaeology |
 
 ## Template
 

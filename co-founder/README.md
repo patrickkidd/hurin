@@ -65,6 +65,16 @@ Just don't approve it. The GitHub Issue stays open for reference. Close it manua
 | Lens prompts | `~/.openclaw/co-founder/lenses/*.md` |
 | ADR | `~/.openclaw/adrs/ADR-0005-action-system.md` |
 
+## Knowledge Base Integration (NEW)
+
+Each lens now reads relevant KB entries before analysis and writes NEW findings back:
+
+1. **Before analysis:** Loads entries from `~/.openclaw/knowledge/` relevant to the lens (e.g., `market-research` reads `knowledge/market/`)
+2. **After analysis:** Prompted to write new findings to appropriate KB files using the Write tool
+3. **Research log:** Checks `knowledge/research-log.md` for unfilled research topics and fills them if the lens covers them
+
+This means lenses build cumulative intelligence instead of starting fresh each run.
+
 ## Available Lenses
 
 | Lens | Focus | Schedule |
@@ -78,6 +88,9 @@ Just don't approve it. The GitHub Issue stays open for reference. Close it manua
 | customer-support | Support patterns, FAQ | Wed 3PM |
 | process-retro | Dev process efficiency | Sat 11AM |
 | training-programs | Partnerships, outreach | 1st & 15th |
+| evolution | AI agent patterns, self-improvement | Monday |
+
+**Note:** All cron schedules are currently **paused** (see decision log 2026-03-01). Planned reactivation: 2-3 lenses per week (Mon/Wed/Fri). Run on-demand via `/cofounder <lens>`.
 
 ## Troubleshooting
 

@@ -90,8 +90,16 @@ BIZ_HOUR_END = 22    # 10:00 PM
 # Autonomy
 # ---------------------------------------------------------------------------
 
-AUTONOMY_TIER = 0
+AUTONOMY_TIER = 1  # Policy engine governs per-category; not a global kill switch
 MAX_CONCURRENT_SPAWNS = 2
+
+# ---------------------------------------------------------------------------
+# Knowledge Base
+# ---------------------------------------------------------------------------
+
+KNOWLEDGE_DIR = HOME / ".openclaw/knowledge"
+SPAWN_POLICY_FILE = KNOWLEDGE_DIR / "self/spawn-policy.json"
+PR_PATTERNS_FILE = KNOWLEDGE_DIR / "technical/successful-pr-patterns.md"
 
 # ---------------------------------------------------------------------------
 # Intervals

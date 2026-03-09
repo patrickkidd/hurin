@@ -962,6 +962,46 @@ def load_recent_recommendations(n=5):
 
 
 # ---------------------------------------------------------------------------
+# Knowledge base helpers for synthesis context
+# ---------------------------------------------------------------------------
+
+def _load_spawn_policy_summary():
+    """Load spawn policy summary for synthesis prompt context."""
+    try:
+        if not SPAWN_POLICY_FILE.exists():
+            return "  No spawn policy yet"
+        policy = json.loads(SPAWN_POLICY_FILE.read_text())
+        lines = []
+        for cat, data in policy.get("categories", {}).items():
+            lines.append(
+                f"  {cat}: {data.get('autonomy', '?')} "
+                f"(accuracy={data.get('accuracy', 0)*100:.0f}%, "
+                f"n={data.get('total', 0)})"
+            )
+        return "\n".join(lines) if lines else "  No categories yet"
+    except Exception:
+        return "  Spawn policy not available"
+
+
+def _load_pr_patterns_summary():
+    """Load PR pattern findings for synthesis prompt context."""
+    try:
+        if not PR_PATTERNS_FILE.exists():
+            return "  No PR pattern analysis yet"
+        content = PR_PATTERNS_FILE.read_text()
+        # Extract just the Key Findings and Rules sections (compact)
+        findings_start = content.find("## Key Findings")
+        rules_start = content.find("## Rules for Spawn Prompt Quality")
+        if rules_start > 0:
+            return content[rules_start:rules_start + 500]
+        elif findings_start > 0:
+            return content[findings_start:findings_start + 500]
+        return content[:300] + "..."
+    except Exception:
+        return "  PR patterns not available"
+
+
+# ---------------------------------------------------------------------------
 # Synthesis engine (Agent SDK)
 # ---------------------------------------------------------------------------
 
@@ -1070,6 +1110,7 @@ Patrick often works interactively with Claude Code, pushing directly to master
 (branch by abstraction strategy for the training/personal app MVP).
 This work does NOT go through the task daemon or create PRs.
 Do NOT report the project as stalled if there are recent direct commits.
+Do NOT propose spawn candidates in areas where Patrick has recent direct commits — he's actively working there.
 {master_summary}
 
 ## Goal Status
@@ -1086,6 +1127,12 @@ Do NOT report the project as stalled if there are recent direct commits.
 
 ## Trust Ledger (System Performance)
 {trust_summary_text}
+
+## Spawn Policy (per-category autonomy)
+{_load_spawn_policy_summary()}
+
+## Successful PR Patterns
+{_load_pr_patterns_summary()}
 
 ## PRs Awaiting Review
 {chr(10).join(f"  - PR #{t.get('pr', '')}: {t.get('description', '')}" for t in pr_open) or "  None"}
@@ -1376,10 +1423,30 @@ def process_synthesis(synthesis, github_data, session_id=""):
     synthesis_file = synthesis.get("_save_path", "")
     post_to_ops(message, session_id=session_id, synthesis_file=synthesis_file)
 
-    # Execute auto-spawns
+    # Execute auto-spawns via spawn policy engine
     if spawn_candidates and AUTONOMY_TIER >= 1:
+        try:
+            from trust_ledger import classify_task, get_spawn_autonomy
+        except ImportError:
+            classify_task = lambda d, f=None: "other"
+            get_spawn_autonomy = lambda c: "propose_only"
+
         for candidate in spawn_candidates:
-            auto_spawn(candidate, github_data)
+            cat = classify_task(candidate.get("title", "") + " " + candidate.get("description", ""))
+            autonomy = get_spawn_autonomy(cat)
+            if autonomy == "auto_spawn":
+                log.info(f"  Policy auto_spawn for [{cat}]: {candidate.get('title', '')}")
+                auto_spawn(candidate, github_data)
+            elif autonomy == "propose_only":
+                log.info(f"  Policy propose_only for [{cat}]: {candidate.get('title', '')} — posting to #planning")
+                post_to_ops(
+                    f"**Propose-only spawn candidate** [{cat}]:\n"
+                    f"> {candidate.get('title', '')}\n"
+                    f"{candidate.get('description', '')}\n"
+                    f"_Reply APPROVE to enqueue._"
+                )
+            else:
+                log.info(f"  Policy blocked for [{cat}]: {candidate.get('title', '')} — skipping")
 
 
 # ---------------------------------------------------------------------------
@@ -1470,6 +1537,13 @@ async def main_loop():
                                 f"**[{a['severity'].upper()}]** {a['message']}"
                             )
 
+                # --- 2b. Telemetry collection (piggyback on GitHub poll) ---
+                try:
+                    from telemetry import collect_all as _collect_telemetry
+                    _collect_telemetry()
+                except Exception as e:
+                    log.debug(f"Telemetry collection error: {e}")
+
                 last_github_poll = now
             except Exception as e:
                 log.error(f"GitHub poll error: {e}")
@@ -1503,6 +1577,21 @@ async def main_loop():
                 last_synthesis = now
             except Exception as e:
                 log.error(f"Synthesis error: {e}")
+
+            # --- Post-synthesis learning: session learner + prompt archaeology ---
+            try:
+                from session_learner import run_learner as _run_session_learner
+                _run_session_learner()
+                log.info("  Session learner completed")
+            except Exception as e:
+                log.debug(f"Session learner error: {e}")
+
+            try:
+                from analyze_prompts import run_analysis as _run_prompt_analysis
+                _run_prompt_analysis()
+                log.info("  Prompt archaeology completed")
+            except Exception as e:
+                log.debug(f"Prompt archaeology error: {e}")
 
         # --- Sleep ---
         await asyncio.sleep(EVENT_POLL_INTERVAL)
