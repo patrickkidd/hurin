@@ -11,11 +11,22 @@ Everything is live and autonomous:
 
 Nothing requires your attention unless you want to steer it.
 
+## Where to Run Commands
+
+**All `/slash` commands go in `#planning`** — that's hurin's primary channel. hurin routes them to the right place.
+
+Output lands in the relevant channel:
+- Co-founder briefings → `#co-founder`
+- COS digests → `#chief-of-staff`
+- Task progress → `#tasks`
+- Spawn candidates + synthesis → `#ops`
+- Revenue-impacting PRs → `#quick-wins`
+
 ## First Week Checklist
 
 ### 1. Run a KB-aware co-founder lens (5 min of your time)
 
-Pick one and fire it off. This seeds the knowledge base with real research:
+Pick one and fire it off in `#planning`. This seeds the knowledge base with real research:
 
 ```
 /cofounder market-research    ← competitors, pricing, market landscape
