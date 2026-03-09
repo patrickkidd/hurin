@@ -186,12 +186,24 @@ def collect_recent_briefings(days=7):
 
 
 def collect_action_outcomes(days=14):
-    """Summarize co-founder actions: proposed vs approved vs completed."""
+    """Summarize co-founder actions: proposed vs approved vs completed.
+
+    Counts are derived entirely from the action JSON files in ACTIONS_DIR.
+    Each action's 'status' field determines its state:
+      - approved/auto_spawned/queued = acted upon (approved)
+      - pending_approval = proposed but not yet approved
+      - unknown/missing status = proposed but not yet approved
+    """
     if not ACTIONS_DIR.exists():
         return "No action history."
 
     total_proposed = 0
+    approved_count = 0
+    completed_count = 0
     total_actions = []
+
+    # Statuses that indicate an action was approved/acted upon
+    APPROVED_STATUSES = {"approved", "auto_spawned", "queued"}
 
     for f in sorted(ACTIONS_DIR.glob("*.json"), reverse=True):
         try:
@@ -199,12 +211,16 @@ def collect_action_outcomes(days=14):
             actions = data.get("actions", [])
             total_proposed += len(actions)
             for a in actions:
+                status = a.get("status", "")
+                if status in APPROVED_STATUSES:
+                    approved_count += 1
                 total_actions.append({
                     "file": f.name,
                     "title": a.get("title", "?"),
                     "confidence": a.get("confidence", 0),
                     "effort": a.get("effort", "?"),
                     "category": a.get("category", "?"),
+                    "status": status,
                 })
         except (json.JSONDecodeError, KeyError):
             continue
@@ -212,30 +228,28 @@ def collect_action_outcomes(days=14):
     if not total_actions:
         return "No actions proposed."
 
-    # Check which ones became issues/PRs
+    # Check how many co-founder-spawned issues are closed (completed)
     code, out, _ = run_shell(
-        'gh issue list --repo patrickkidd/theapp --label co-founder '
-        '--state all --json title,state --limit 200',
+        'gh issue list --repo patrickkidd/theapp --label cf-spawned '
+        '--state closed --json title --limit 200',
         timeout=30,
     )
-    approved = []
     if code == 0 and out:
         try:
-            approved = json.loads(out)
+            completed_count = len(json.loads(out))
         except json.JSONDecodeError:
             pass
 
-    approved_count = len(approved)
-    closed_count = sum(1 for i in approved if i.get("state") == "CLOSED")
+    approval_rate = approved_count / max(total_proposed, 1) * 100
 
     return (
-        f"**Actions summary (last {days} days):**\n"
+        f"**Actions summary (all time):**\n"
         f"- Proposed: {total_proposed}\n"
-        f"- Approved (became issues): {approved_count}\n"
-        f"- Completed (closed): {closed_count}\n"
-        f"- Approval rate: {approved_count/max(total_proposed,1)*100:.0f}%\n\n"
+        f"- Approved (acted upon): {approved_count}\n"
+        f"- Completed (closed): {completed_count}\n"
+        f"- Approval rate: {approval_rate:.0f}%\n\n"
         f"Recent actions:\n" +
-        "\n".join(f"  - [{a['confidence']:.1f}] {a['title']} ({a['effort']}, {a['category']})"
+        "\n".join(f"  - [{a['confidence']:.1f}] [{a['status']}] {a['title']} ({a['effort']}, {a['category']})"
                  for a in total_actions[:10])
     )
 
@@ -711,6 +725,7 @@ One question Patrick probably doesn't want to think about but should. Could be a
 
     gh_token = load_gh_token()
     sdk_env = {
+    "ANTHROPIC_API_KEY": "",  # Force SDK to use CLI with Max plan, not API
         "PATH": "/usr/local/bin:" + str(HOME / ".local/bin") + ":" + os.environ.get("PATH", ""),
         "HOME": str(HOME),
         "CLAUDECODE": "",  # unset to allow nested session
