@@ -17,6 +17,7 @@ _bot_token_file = Path.home() / ".openclaw/monitor/hurin-bot-token"
 if _bot_token_file.exists():
     os.environ["GH_TOKEN"] = _bot_token_file.read_text().strip()
 
+GH_BIN = Path.home() / ".local/bin/gh"
 FEEDBACK_LOG = Path.home() / ".openclaw/workspace-hurin/feedback/log.jsonl"
 
 
@@ -62,7 +63,7 @@ def _infer_task_type(repo, files_changed):
 
 def _get_files_changed(pr_num, repo_dir):
     """Get list of files changed in a PR."""
-    code, out, _ = run(f"gh pr diff {pr_num} --name-only", cwd=repo_dir)
+    code, out, _ = run(f"{GH_BIN} pr diff {pr_num} --name-only", cwd=repo_dir)
     if code == 0 and out:
         return [f for f in out.splitlines() if f.strip()]
     return []
@@ -71,7 +72,7 @@ def _get_files_changed(pr_num, repo_dir):
 def _get_ci_status(pr_num, repo_dir):
     """Get overall CI status: pass/fail/pending/unknown."""
     code, out, _ = run(
-        f"gh pr checks {pr_num} --json state,conclusion 2>/dev/null",
+        f"{GH_BIN} pr checks {pr_num} --json state,conclusion 2>/dev/null",
         cwd=repo_dir
     )
     if code != 0 or not out:
@@ -92,7 +93,7 @@ def _get_ci_status(pr_num, repo_dir):
 def _get_pr_verdict(pr_num, repo_dir):
     """Get PR verdict: merged/closed/changes_requested/open/no_pr."""
     code, out, _ = run(
-        f"gh pr view {pr_num} --json state,reviewDecision 2>/dev/null",
+        f"{GH_BIN} pr view {pr_num} --json state,reviewDecision 2>/dev/null",
         cwd=repo_dir
     )
     if code != 0 or not out:
@@ -115,7 +116,7 @@ def _get_pr_verdict(pr_num, repo_dir):
 def _get_lines_changed(pr_num, repo_dir):
     """Get total lines changed (insertions + deletions) from PR diff stat."""
     code, out, _ = run(
-        f"gh pr diff {pr_num} --stat 2>/dev/null | tail -1", cwd=repo_dir
+        f"{GH_BIN} pr diff {pr_num} --stat 2>/dev/null | tail -1", cwd=repo_dir
     )
     if code != 0 or not out:
         return 0
@@ -128,7 +129,7 @@ def _get_lines_changed(pr_num, repo_dir):
 def _get_pr_created_at(pr_num, repo_dir):
     """Get PR creation timestamp as ISO string, or empty string."""
     code, out, _ = run(
-        f"gh pr view {pr_num} --json createdAt --jq .createdAt 2>/dev/null",
+        f"{GH_BIN} pr view {pr_num} --json createdAt --jq .createdAt 2>/dev/null",
         cwd=repo_dir
     )
     if code == 0 and out:
@@ -139,7 +140,7 @@ def _get_pr_created_at(pr_num, repo_dir):
 def _get_review_comments(pr_num, repo_dir):
     """Get the latest review body text, truncated."""
     code, out, _ = run(
-        f"gh pr view {pr_num} --json reviews "
+        f"{GH_BIN} pr view {pr_num} --json reviews "
         f"--jq '.reviews[-1].body' 2>/dev/null",
         cwd=repo_dir
     )

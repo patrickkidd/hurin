@@ -71,7 +71,7 @@
         "workspace": "/home/hurin/.openclaw/workspace-huor",
         "agentDir": "/home/hurin/.openclaw/agents/huor/agent",
         "model": "minimax/MiniMax-M2.5",
-        "skills": ["teamlead", "task", "trust", "dashboard", "research", "status"],
+        "skills": ["teamlead", "task", "trust", "dashboard", "research", "status", "focus"],
         "tools": {
           "allow": [
             "exec",
@@ -88,7 +88,7 @@
         "workspace": "/home/hurin/.openclaw/workspace-tuor",
         "agentDir": "/home/hurin/.openclaw/agents/tuor/agent",
         "model": "minimax/MiniMax-M2.5",
-        "skills": ["cofounder"],
+        "skills": ["cofounder", "focus"],
         "tools": {
           "allow": [
             "exec",
@@ -105,7 +105,7 @@
         "workspace": "/home/hurin/.openclaw/workspace-beren",
         "agentDir": "/home/hurin/.openclaw/agents/beren/agent",
         "model": "minimax/MiniMax-M2.5",
-        "skills": ["cos"],
+        "skills": ["cos", "focus"],
         "tools": {
           "allow": [
             "exec",
@@ -318,6 +318,9 @@
         "enabled": true
       },
       "status": {
+        "enabled": true
+      },
+      "focus": {
         "enabled": true
       }
     }

@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 MONITOR_DIR = Path(__file__).parent
+GH_BIN = Path.home() / ".local/bin/gh"
 SCRIPTS_DIR = Path.home() / ".openclaw" / "workspace-hurin" / "scripts"
 GH_SYNC_SCRIPT = SCRIPTS_DIR / "gh-project-sync.sh"
 
@@ -94,7 +95,7 @@ def fetch_all_board_items():
     }}
   }}
 }}'''
-        rc, out, err = run(f"gh api graphql -f query='{query}'")
+        rc, out, err = run(f"{GH_BIN} api graphql -f query='{query}'")
         if rc != 0:
             log.error(f"GraphQL query failed: {err}")
             break
@@ -162,9 +163,9 @@ def sync_board_status(item_id, status):
 def fix_stale_labels(repo, number, add=None, remove=None):
     """Fix labels on an issue/PR."""
     if add:
-        run(f"gh issue edit {number} --repo {repo} --add-label {add} 2>/dev/null")
+        run(f"{GH_BIN} issue edit {number} --repo {repo} --add-label {add} 2>/dev/null")
     if remove:
-        run(f"gh issue edit {number} --repo {repo} --remove-label {remove} 2>/dev/null")
+        run(f"{GH_BIN} issue edit {number} --repo {repo} --remove-label {remove} 2>/dev/null")
 
 
 def reconcile():

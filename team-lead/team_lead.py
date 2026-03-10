@@ -29,6 +29,9 @@ from pathlib import Path
 
 from config import *
 
+# Force Max plan — never use API key. "Credit balance is too low" = API key leak.
+os.environ.pop("ANTHROPIC_API_KEY", None)
+
 # Import shared channel thread registry from discord_relay
 sys.path.insert(0, str(HOME / ".openclaw/monitor"))
 from discord_relay import (
@@ -312,7 +315,7 @@ _github_cache_ts = 0
 
 def gh_graphql(query_str, variables=None):
     """Run a GitHub GraphQL query via gh CLI."""
-    cmd = ["gh", "api", "graphql", "-f", f"query={query_str}"]
+    cmd = [str(GH_BIN), "api", "graphql", "-f", f"query={query_str}"]
     if variables:
         for k, v in variables.items():
             cmd.extend(["-f", f"{k}={v}"])
@@ -453,7 +456,7 @@ def parse_project_items(raw_items):
 def fetch_open_prs():
     """Fetch open PRs for the repo."""
     code, out, _ = run(
-        f'gh pr list --repo {GITHUB_REPO} --json number,title,state,headRefName,'
+        f'{GH_BIN} pr list --repo {GITHUB_REPO} --json number,title,state,headRefName,'
         f'isDraft,reviewDecision,statusCheckRollup,updatedAt --limit 50'
     )
     if code != 0 or not out:
@@ -472,7 +475,7 @@ def fetch_all_open_prs():
     all_prs = []
     for repo in PRODUCT_REPOS:
         code, out, _ = run(
-            f'gh pr list --repo {repo} --json number,title,headRefName,'
+            f'{GH_BIN} pr list --repo {repo} --json number,title,headRefName,'
             f'isDraft,reviewDecision,statusCheckRollup,updatedAt,'
             f'comments,reviews,author --limit 30',
             timeout=30,
@@ -530,7 +533,7 @@ def fetch_all_open_prs():
 def fetch_ci_status(branch="master"):
     """Check CI status for a branch."""
     code, out, _ = run(
-        f'gh api repos/{GITHUB_REPO}/commits/{branch}/status --jq .state'
+        f'{GH_BIN} api repos/{GITHUB_REPO}/commits/{branch}/status --jq .state'
     )
     return out if code == 0 else "unknown"
 
@@ -538,7 +541,7 @@ def fetch_ci_status(branch="master"):
 def get_pr_for_issue(issue_number):
     """Check if an issue has a linked PR and its state."""
     code, out, _ = run(
-        f'gh pr list --repo {GITHUB_REPO} --search "closes #{issue_number}" '
+        f'{GH_BIN} pr list --repo {GITHUB_REPO} --search "closes #{issue_number}" '
         f'--json number,state,isDraft,reviewDecision,statusCheckRollup --limit 1'
     )
     if code != 0 or not out:
@@ -562,7 +565,7 @@ def fetch_master_activity(days=7):
 
     for repo in repos:
         code, out, _ = run(
-            f'gh api "repos/{repo}/commits?sha=master&since={since}&per_page=100"',
+            f'{GH_BIN} api "repos/{repo}/commits?sha=master&since={since}&per_page=100"',
             timeout=30,
         )
         if code != 0 or not out:
@@ -1228,7 +1231,19 @@ async def run_synthesis(metrics, events, github_data, anomalies):
     else:
         master_summary = "  No direct master commits in last 7 days"
 
-    prompt = f"""You are the Team Lead for the FamilyDiagram/BTCoPilot MVP project — Patrick's operational co-founder doing the weekly check-in.
+    # === Collective Intelligence: Cross-Agent Context ===
+    try:
+        from shared_memory import build_cross_context_for_huor, SIGNAL_EMISSION_PROMPT
+        ci_cross_context = build_cross_context_for_huor()
+        ci_signal_prompt = SIGNAL_EMISSION_PROMPT
+    except Exception as e:
+        log.warning(f"CI cross-context failed (non-fatal): {e}")
+        ci_cross_context = ""
+        ci_signal_prompt = ""
+
+    prompt = f"""{ci_cross_context}
+
+You are the Team Lead for the FamilyDiagram/BTCoPilot MVP project — Patrick's operational co-founder doing the weekly check-in.
 
 ## Your Role
 
@@ -1349,12 +1364,15 @@ Rules for auto_spawn_candidates:
 - Must be concrete and self-contained (Claude Code must be able to do it with no clarification)
 - If in doubt, put it in recommendations instead
 - Empty array is fine — don't force it
+
+{ci_signal_prompt}
 """
 
     log.info("Running weekly synthesis...")
 
     # CLAUDECODE intentionally absent — prevents nested session detection
     synthesis_env = {
+        "ANTHROPIC_API_KEY": "",  # Force Max plan — never use API key
         "PATH": "/usr/local/bin:" + str(HOME / ".local/bin") + ":" + os.environ.get("PATH", ""),
         "HOME": str(HOME),
     }
@@ -1395,6 +1413,16 @@ Rules for auto_spawn_candidates:
         log.info(f"Synthesis saved to {save_path.name}")
         synthesis["_session_id"] = session_id
         synthesis["_save_path"] = str(save_path)
+
+    # === Collective Intelligence: Extract and emit cross-agent signals ===
+    try:
+        from shared_memory import extract_and_emit_signals
+        ts_label = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        emitted = extract_and_emit_signals(result_text, from_agent="huor", source_artifact=f"synthesis-{ts_label}")
+        if emitted:
+            log.info(f"CI: Emitted {len(emitted)} cross-agent signals from synthesis")
+    except Exception as e:
+        log.warning(f"CI signal emission failed (non-fatal): {e}")
 
     return synthesis, session_id
 
@@ -1459,7 +1487,7 @@ def auto_spawn(candidate, github_data):
     # 1. Create GitHub Issue
     labels = "co-founder,velocity,cf-spawned"
     code, out, err = run(
-        f'gh issue create --repo {GITHUB_REPO} '
+        f'{GH_BIN} issue create --repo {GITHUB_REPO} '
         f'--title {json.dumps(issue_title)} '
         f'--body {json.dumps(f"Auto-spawned by team lead daemon.{chr(10)}{chr(10)}{description}")} '
         f'--label "{labels}"'
@@ -1476,7 +1504,7 @@ def auto_spawn(candidate, github_data):
     # 2. Add to Project #4
     if issue_number:
         code, out, err = run(
-            f'gh project item-add {PROJECT_NUMBER} --owner patrickkidd '
+            f'{GH_BIN} project item-add {PROJECT_NUMBER} --owner patrickkidd '
             f'--url {issue_url}'
         )
         if code == 0:

@@ -14,6 +14,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 HOME = Path.home()
+GH_BIN = HOME / ".local/bin/gh"
 TELEMETRY_FILE = HOME / ".openclaw/knowledge/self/telemetry.jsonl"
 REPOS = ["patrickkidd/familydiagram", "patrickkidd/btcopilot", "patrickkidd/fdserver"]
 TASK_EVENTS = HOME / ".openclaw/monitor/task-events.jsonl"
@@ -56,7 +57,7 @@ def collect_pr_review_latency():
 
     for repo in REPOS:
         rc, out, _ = _run(
-            f'gh pr list --repo {repo} --author patrickkidd-hurin '
+            f'{GH_BIN} pr list --repo {repo} --author patrickkidd-hurin '
             f'--state all --json number,createdAt,mergedAt,closedAt,state '
             f'--limit 50'
         )
@@ -109,7 +110,7 @@ def collect_master_topics():
 
     for repo in REPOS:
         rc, out, _ = _run(
-            f'gh api "repos/{repo}/commits?sha=master&since={since}&per_page=100"'
+            f'{GH_BIN} api "repos/{repo}/commits?sha=master&since={since}&per_page=100"'
         )
         if rc != 0 or not out:
             continue

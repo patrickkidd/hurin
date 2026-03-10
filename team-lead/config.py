@@ -34,6 +34,7 @@ GH_SYNC_SCRIPT = SCRIPTS_DIR / "gh-project-sync.sh"
 BOT_TOKEN_FILE = MONITOR_DIR / "hurin-bot-token"
 DISCORD_TOKEN_FILE = MONITOR_DIR / "discord-bot-token"
 CLAUDE_BIN = HOME / ".local/bin/claude"
+GH_BIN = HOME / ".local/bin/gh"
 
 # ---------------------------------------------------------------------------
 # GitHub

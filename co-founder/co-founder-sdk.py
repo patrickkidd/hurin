@@ -30,10 +30,14 @@ LENSES_DIR = COFOUNDER_DIR / "lenses"
 JOURNAL = COFOUNDER_DIR / "journal.md"
 THEAPP = HOME / ".openclaw/workspace-hurin/theapp"
 CLAUDE_BIN = HOME / ".local/bin/claude"
+GH_BIN = HOME / ".local/bin/gh"
 BRIEFINGS_DIR = COFOUNDER_DIR / "briefings"
 SESSIONS_DIR = COFOUNDER_DIR / "sessions"
 ACTIONS_DIR = COFOUNDER_DIR / "actions"
 PROMPT_TMPFILE = Path("/tmp/co-founder-prompt.txt")
+
+# Force Max plan — never use API key. "Credit balance is too low" = API key leak.
+os.environ.pop("ANTHROPIC_API_KEY", None)
 
 JOURNAL_MAX_LINES = 1000
 JOURNAL_CONTEXT_LINES = 100
@@ -115,7 +119,7 @@ def fetch_master_activity(days=7):
 
     for repo in repos:
         code, out, _ = run_shell(
-            f'gh api "repos/{repo}/commits?sha=master&since={since}&per_page=100"',
+            f'{GH_BIN} api "repos/{repo}/commits?sha=master&since={since}&per_page=100"',
             timeout=30,
         )
         if code != 0 or not out:
@@ -270,7 +274,7 @@ def discord_post(message, attachment_path=None):
 def fetch_open_issue_titles():
     """Fetch titles of open co-founder issues to dedup against."""
     code, out, _ = run_shell(
-        'gh issue list --repo patrickkidd/theapp --label co-founder '
+        f'{GH_BIN} issue list --repo patrickkidd/theapp --label co-founder '
         '--state open --json title --limit 200 --jq ".[].title"',
         timeout=30,
     )
@@ -368,7 +372,7 @@ def git_commit_and_push(files, message):
         cwd=openclaw_dir,
     )
     rc, out, err = run_shell(
-        'git -c "credential.helper=!gh auth git-credential" push',
+        f'git -c "credential.helper=!{GH_BIN} auth git-credential" push',
         cwd=openclaw_dir,
     )
     if rc != 0:
@@ -423,8 +427,21 @@ async def run_lens(lens_name):
     # 2c. Load relevant KB entries for this lens
     kb_context = _load_kb_context(lens_name)
 
+    # 2d. Collective Intelligence: Cross-agent context
+    try:
+        sys.path.insert(0, str(HOME / ".openclaw/monitor"))
+        from shared_memory import build_cross_context_for_tuor, SIGNAL_EMISSION_PROMPT
+        ci_cross_context = build_cross_context_for_tuor()
+        ci_signal_prompt = SIGNAL_EMISSION_PROMPT
+    except Exception as e:
+        log.warning(f"CI cross-context failed (non-fatal): {e}")
+        ci_cross_context = ""
+        ci_signal_prompt = ""
+
     # 3. Assemble full prompt (same structure as co-founder.sh)
     prompt = f"""{lens_prompt}
+
+{ci_cross_context}
 
 ---
 
@@ -532,12 +549,30 @@ Use the Write tool to create or update files. Include `Last verified: {datetime.
 Also check `{RESEARCH_LOG}` for unfilled research topics. If your lens covers one, fill it in.
 
 **spawn_prompt quality bar:** It must be a complete, self-contained prompt that another CC instance could execute cold — specific files, specific changes, specific acceptance criteria. If you can't write a crisp spawn_prompt, the action isn't ready.
+
+## Priority Challenge (MANDATORY)
+Review Huor's current task queue and active tasks (from the operational data above).
+Identify the single highest-priority task that you believe is WRONG to prioritize right now.
+Argue why — cite strategic context, opportunity cost, or dependency analysis that Huor's operational lens would miss.
+
+If the current prioritization is actually correct, say so and explain why.
+Do NOT manufacture disagreement — only challenge when you genuinely see a problem.
+
+Output format:
+### Priority Challenge
+**Target task:** [task ID or description]
+**My argument:** [why this is wrong to prioritize now]
+**What should be prioritized instead:** [alternative]
+**Confidence:** [0.0-1.0]
+
+{ci_signal_prompt}
 """
 
     # 4. Run via Agent SDK
     log.info(f"Calling Agent SDK (model={CLAUDE_MODEL}, max_turns={MAX_TURNS})...")
 
     sdk_env = {
+        "ANTHROPIC_API_KEY": "",  # Force Max plan — never use API key
         "GH_TOKEN": load_gh_token(),
         "PATH": "/usr/local/bin:" + str(HOME / ".local/bin") + ":" + os.environ.get("PATH", ""),
         "HOME": str(HOME),
@@ -573,6 +608,16 @@ Also check `{RESEARCH_LOG}` for unfilled research topics. If your lens covers on
         sys.exit(1)
 
     log.info(f"SDK returned {len(cc_output)} chars")
+
+    # 4b. Collective Intelligence: Extract and emit cross-agent signals
+    try:
+        from shared_memory import extract_and_emit_signals
+        briefing_date_label = datetime.now().strftime("%Y-%m-%d")
+        emitted = extract_and_emit_signals(cc_output, from_agent="tuor", source_artifact=f"briefing-{lens_name}-{briefing_date_label}")
+        if emitted:
+            log.info(f"CI: Emitted {len(emitted)} cross-agent signals from briefing")
+    except Exception as e:
+        log.warning(f"CI signal emission failed (non-fatal): {e}")
 
     # 5. Save session ID for follow-up
     if session_id:

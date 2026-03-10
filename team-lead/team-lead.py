@@ -27,6 +27,9 @@ import urllib.request
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+# Force Max plan — never use API key. "Credit balance is too low" = API key leak.
+os.environ.pop("ANTHROPIC_API_KEY", None)
+
 from config import *
 
 # Import shared channel thread registry from discord_relay
@@ -312,7 +315,7 @@ _github_cache_ts = 0
 
 def gh_graphql(query_str, variables=None):
     """Run a GitHub GraphQL query via gh CLI."""
-    cmd = ["gh", "api", "graphql", "-f", f"query={query_str}"]
+    cmd = [str(GH_BIN), "api", "graphql", "-f", f"query={query_str}"]
     if variables:
         for k, v in variables.items():
             cmd.extend(["-f", f"{k}={v}"])
@@ -453,7 +456,7 @@ def parse_project_items(raw_items):
 def fetch_open_prs():
     """Fetch open PRs for the repo."""
     code, out, _ = run(
-        f'gh pr list --repo {GITHUB_REPO} --json number,title,state,headRefName,'
+        f'{GH_BIN} pr list --repo {GITHUB_REPO} --json number,title,state,headRefName,'
         f'isDraft,reviewDecision,statusCheckRollup,updatedAt --limit 50'
     )
     if code != 0 or not out:
@@ -472,7 +475,7 @@ def fetch_all_open_prs():
     all_prs = []
     for repo in PRODUCT_REPOS:
         code, out, _ = run(
-            f'gh pr list --repo {repo} --json number,title,headRefName,'
+            f'{GH_BIN} pr list --repo {repo} --json number,title,headRefName,'
             f'isDraft,reviewDecision,statusCheckRollup,updatedAt,'
             f'comments,reviews,author --limit 30',
             timeout=30,
@@ -530,7 +533,7 @@ def fetch_all_open_prs():
 def fetch_ci_status(branch="master"):
     """Check CI status for a branch."""
     code, out, _ = run(
-        f'gh api repos/{GITHUB_REPO}/commits/{branch}/status --jq .state'
+        f'{GH_BIN} api repos/{GITHUB_REPO}/commits/{branch}/status --jq .state'
     )
     return out if code == 0 else "unknown"
 
@@ -538,7 +541,7 @@ def fetch_ci_status(branch="master"):
 def get_pr_for_issue(issue_number):
     """Check if an issue has a linked PR and its state."""
     code, out, _ = run(
-        f'gh pr list --repo {GITHUB_REPO} --search "closes #{issue_number}" '
+        f'{GH_BIN} pr list --repo {GITHUB_REPO} --search "closes #{issue_number}" '
         f'--json number,state,isDraft,reviewDecision,statusCheckRollup --limit 1'
     )
     if code != 0 or not out:
@@ -562,7 +565,7 @@ def fetch_master_activity(days=7):
 
     for repo in repos:
         code, out, _ = run(
-            f'gh api "repos/{repo}/commits?sha=master&since={since}&per_page=100"',
+            f'{GH_BIN} api "repos/{repo}/commits?sha=master&since={since}&per_page=100"',
             timeout=30,
         )
         if code != 0 or not out:
@@ -1354,9 +1357,12 @@ Rules for auto_spawn_candidates:
     log.info("Running weekly synthesis...")
 
     # CLAUDECODE intentionally absent — prevents nested session detection
+    # ANTHROPIC_API_KEY explicitly empty — forces CLI to use Max plan OAuth,
+    # not the API. "Credit balance is too low" = API key leak.
     synthesis_env = {
         "PATH": "/usr/local/bin:" + str(HOME / ".local/bin") + ":" + os.environ.get("PATH", ""),
         "HOME": str(HOME),
+        "ANTHROPIC_API_KEY": "",
     }
     # Only set GH_TOKEN if we have a bot token; otherwise let gh use system auth
     if BOT_TOKEN:
@@ -1459,7 +1465,7 @@ def auto_spawn(candidate, github_data):
     # 1. Create GitHub Issue
     labels = "co-founder,velocity,cf-spawned"
     code, out, err = run(
-        f'gh issue create --repo {GITHUB_REPO} '
+        f'{GH_BIN} issue create --repo {GITHUB_REPO} '
         f'--title {json.dumps(issue_title)} '
         f'--body {json.dumps(f"Auto-spawned by team lead daemon.{chr(10)}{chr(10)}{description}")} '
         f'--label "{labels}"'
@@ -1476,7 +1482,7 @@ def auto_spawn(candidate, github_data):
     # 2. Add to Project #4
     if issue_number:
         code, out, err = run(
-            f'gh project item-add {PROJECT_NUMBER} --owner patrickkidd '
+            f'{GH_BIN} project item-add {PROJECT_NUMBER} --owner patrickkidd '
             f'--url {issue_url}'
         )
         if code == 0:

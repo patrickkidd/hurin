@@ -26,6 +26,9 @@ import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+# Force Max plan — never use API key. "Credit balance is too low" = API key leak.
+os.environ.pop("ANTHROPIC_API_KEY", None)
+
 # ---------------------------------------------------------------------------
 # Paths & constants
 # ---------------------------------------------------------------------------
@@ -34,6 +37,7 @@ HOME = Path.home()
 COS_DIR = HOME / ".openclaw/chief-of-staff"
 DIGESTS_DIR = COS_DIR / "digests"
 CLAUDE_BIN = HOME / ".local/bin/claude"
+GH_BIN = HOME / ".local/bin/gh"
 THEAPP = HOME / ".openclaw/workspace-hurin/theapp"
 
 # Agent system paths
@@ -230,7 +234,7 @@ def collect_action_outcomes(days=14):
 
     # Check how many co-founder-spawned issues are closed (completed)
     code, out, _ = run_shell(
-        'gh issue list --repo patrickkidd/theapp --label cf-spawned '
+        f'{GH_BIN} issue list --repo patrickkidd/theapp --label cf-spawned '
         '--state closed --json title --limit 200',
         timeout=30,
     )
@@ -344,7 +348,7 @@ def fetch_master_activity(days=7):
 
     for repo in REPOS:
         code, out, _ = run_shell(
-            f'gh api "repos/{repo}/commits?sha=master&since={since}&per_page=100"',
+            f'{GH_BIN} api "repos/{repo}/commits?sha=master&since={since}&per_page=100"',
             timeout=30,
         )
         if code != 0 or not out:
@@ -621,6 +625,16 @@ async def run_digest():
     telemetry_summary = collect_telemetry_summary()
     capability_gaps = collect_capability_gaps()
 
+    # === Collective Intelligence: Cross-Agent Context ===
+    try:
+        from shared_memory import build_cross_context_for_beren, SIGNAL_EMISSION_PROMPT
+        ci_cross_context = build_cross_context_for_beren()
+        ci_signal_prompt = SIGNAL_EMISSION_PROMPT
+    except Exception as e:
+        log.warning(f"CI cross-context failed (non-fatal): {e}")
+        ci_cross_context = ""
+        ci_signal_prompt = ""
+
     prompt = f"""You are the Chief of Staff for an AI agent system supporting Patrick's software development.
 
 Your job is to evaluate the ENTIRE system — not just the project, but how well the agent infrastructure is serving Patrick — and produce a concise strategic digest.
@@ -719,6 +733,10 @@ One question Patrick probably doesn't want to think about but should. Could be a
 - Keep the digest under 1500 words. Patrick's time is the scarcest resource.
 - Do NOT use markdown # headers. Use **bold** for section labels.
 - Do NOT propose actions or spawn tasks. This is strategic advice only.
+
+{ci_cross_context}
+
+{ci_signal_prompt}
 """
 
     log.info(f"Running Agent SDK (model={CLAUDE_MODEL}, max_turns={MAX_TURNS})...")
@@ -764,6 +782,16 @@ One question Patrick probably doesn't want to think about but should. Could be a
 
     log.info(f"SDK returned {len(cc_output)} chars")
 
+    # === Collective Intelligence: Extract and emit cross-agent signals ===
+    try:
+        from shared_memory import extract_and_emit_signals
+        digest_date_label = datetime.now().strftime("%Y-%m-%d")
+        emitted = extract_and_emit_signals(cc_output, from_agent="beren", source_artifact=f"digest-{digest_date_label}")
+        if emitted:
+            log.info(f"CI: Emitted {len(emitted)} cross-agent signals from digest")
+    except Exception as e:
+        log.warning(f"CI signal emission failed (non-fatal): {e}")
+
     # Save digest
     now = datetime.now()
     digest_date = now.strftime("%Y-%m-%d")
@@ -804,7 +832,7 @@ One question Patrick probably doesn't want to think about but should. Could be a
         cwd=openclaw_dir,
     )
     rc, _, err = run_shell(
-        'git -c "credential.helper=!gh auth git-credential" push',
+        f'git -c "credential.helper=!{GH_BIN} auth git-credential" push',
         cwd=openclaw_dir,
     )
     if rc != 0:

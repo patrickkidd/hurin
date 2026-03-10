@@ -117,6 +117,7 @@ async def run_query(prompt: str, args) -> int:
 
     # Build SDK options - force Max plan by clearing API key
     env = {
+        "ANTHROPIC_API_KEY": "",  # Force Max plan — never use API key
         "PATH": "/usr/local/bin:"
         + str(HOME / ".local/bin")
         + ":"

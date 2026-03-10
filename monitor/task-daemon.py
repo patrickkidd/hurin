@@ -85,6 +85,7 @@ PROJECT_ID = "PVT_kwHOABjmWc4BP0PU"
 SCRIPTS_DIR = HOME / ".openclaw/workspace-hurin/scripts"
 GH_FIND_SCRIPT = SCRIPTS_DIR / "gh-project-find-item.sh"
 GH_SYNC_SCRIPT = SCRIPTS_DIR / "gh-project-sync.sh"
+GH_BIN = HOME / ".local/bin/gh"
 GITHUB_REPO = "patrickkidd/theapp"
 
 # Discord channel IDs imported from discord_relay
@@ -199,6 +200,78 @@ def emit_event(event_type, **kwargs):
             f.write(json.dumps(entry) + "\n")
     except IOError as e:
         log.warning(f"Failed to emit event {event_type}: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Collective Intelligence: Episode capture
+# ---------------------------------------------------------------------------
+
+def capture_episode(task_entry, result_text=""):
+    """Record task outcome as an episode in the CI episodic memory.
+    Extracts lessons from the result text and writes to episodes.jsonl."""
+    try:
+        from shared_memory import append_episode
+        task_id = task_entry.get("id", "unknown")
+        repo = task_entry.get("repo", "unknown")
+        status = task_entry.get("status", "unknown")
+
+        # Map daemon statuses to episode outcomes
+        outcome_map = {"done": "merged", "failed": "abandoned", "killed": "killed"}
+        outcome = outcome_map.get(status, status)
+        if task_entry.get("pr") and status == "done":
+            outcome = "merged"
+        elif not task_entry.get("pr") and status == "done":
+            outcome = "completed_no_pr"
+
+        # Duration in hours
+        started_at = task_entry.get("startedAt", 0)
+        duration_hrs = 0
+        if started_at:
+            duration_hrs = (time.time() * 1000 - started_at) / (1000 * 3600)
+
+        # Extract lessons from result text (simple heuristic — look for key phrases)
+        lessons = []
+        if result_text:
+            # Look for lines that contain lesson-like patterns
+            for line in result_text.split("\n"):
+                line = line.strip()
+                if not line:
+                    continue
+                lower = line.lower()
+                if any(kw in lower for kw in [
+                    "lesson", "learned", "note:", "important:", "gotcha",
+                    "workaround", "the fix was", "root cause", "the issue was",
+                    "key insight", "takeaway",
+                ]):
+                    lessons.append(line[:200])
+                    if len(lessons) >= 5:
+                        break
+        if not lessons:
+            desc = task_entry.get("description", "")
+            if outcome == "merged":
+                lessons.append(f"Task completed successfully: {desc[:150]}")
+            elif outcome == "abandoned":
+                lessons.append(f"Task failed: {desc[:150]}")
+
+        # Tags from repo and description
+        tags = [repo.split("/")[-1] if "/" in repo else repo]
+        desc_lower = task_entry.get("description", "").lower()
+        for tag in ["auth", "qml", "testing", "ci", "refactor", "bug", "feature", "ui"]:
+            if tag in desc_lower:
+                tags.append(tag)
+
+        append_episode(
+            task_id=task_id,
+            repo=repo,
+            outcome=outcome,
+            duration_hrs=duration_hrs,
+            lessons=lessons,
+            tags=tags,
+            spawned_by=task_entry.get("spawnedBy", "huor"),
+        )
+        log.info(f"CI: Episode captured for {task_id} ({outcome})")
+    except Exception as e:
+        log.warning(f"CI episode capture failed (non-fatal): {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -337,7 +410,7 @@ def cleanup_worktree(task):
 
 def get_pr(branch, repo_dir):
     code, out, _ = run(
-        f"gh pr list --head '{branch}' "
+        f"{GH_BIN} pr list --head '{branch}' "
         f"--json number,state,url,statusCheckRollup,reviewDecision --limit 1",
         cwd=repo_dir,
     )
@@ -350,7 +423,7 @@ def get_pr(branch, repo_dir):
 
 def get_ci_failure_details(pr_num, repo_dir):
     code, out, _ = run(
-        f"gh pr checks {pr_num} --json name,state,conclusion 2>/dev/null",
+        f"{GH_BIN} pr checks {pr_num} --json name,state,conclusion 2>/dev/null",
         cwd=repo_dir,
     )
     if code != 0 or not out:
@@ -367,7 +440,7 @@ def get_ci_failure_details(pr_num, repo_dir):
 
 def get_review_comments(pr_num, repo_dir):
     code, out, _ = run(
-        f"gh pr view {pr_num} --json reviews --jq '.reviews[-1].body' 2>/dev/null",
+        f"{GH_BIN} pr view {pr_num} --json reviews --jq '.reviews[-1].body' 2>/dev/null",
         cwd=repo_dir,
     )
     if code == 0 and out:
@@ -909,7 +982,7 @@ async def run_task(entry, is_respawn=False, respawn_context=""):
         task_entry["prUrl"] = pr_url
 
         # Score risk
-        _, diff_out, _ = run(f"gh pr diff {pr_num} --name-only", cwd=repo_dir)
+        _, diff_out, _ = run(f"{GH_BIN} pr diff {pr_num} --name-only", cwd=repo_dir)
         files_changed = [f for f in diff_out.splitlines() if f.strip()]
         risk = score_risk(files_changed)
         task_entry["riskLevel"] = risk
@@ -932,17 +1005,18 @@ async def run_task(entry, is_respawn=False, respawn_context=""):
                 capture_outcome(task_entry)
             except Exception as e:
                 log.warning(f"  feedback capture failed: {e}")
+            capture_episode(task_entry, result_text)
             # Label issue
             issue_num = task_entry.get("issueNumber")
             if issue_num:
-                run(f"gh issue edit {issue_num} --repo {GITHUB_REPO} "
+                run(f"{GH_BIN} issue edit {issue_num} --repo {GITHUB_REPO} "
                     f"--add-label cf-done --remove-label cf-pr-open 2>/dev/null")
         else:
             task_entry["status"] = "pr_open"
             # Label issue
             issue_num = task_entry.get("issueNumber")
             if issue_num:
-                run(f"gh issue edit {issue_num} --repo {GITHUB_REPO} "
+                run(f"{GH_BIN} issue edit {issue_num} --repo {GITHUB_REPO} "
                     f"--add-label cf-pr-open --remove-label cf-spawned 2>/dev/null")
 
             if failed:
@@ -1012,6 +1086,7 @@ async def run_task(entry, is_respawn=False, respawn_context=""):
                 capture_outcome(task_entry)
             except Exception as e:
                 log.warning(f"  feedback capture failed: {e}")
+            capture_episode(task_entry, result_text)
     else:
         # Completed without error but no PR found — recheck once (GH API can be slow)
         log.info(f"  Task {task_id} finished (no error) but no PR detected. Will recheck.")
@@ -1044,6 +1119,7 @@ async def run_task(entry, is_respawn=False, respawn_context=""):
                 capture_outcome(task_entry)
             except Exception as e:
                 log.warning(f"  feedback capture failed: {e}")
+            capture_episode(task_entry, result_text)
 
 
 def _get_failure_context(task_id):
@@ -1098,9 +1174,10 @@ def monitor_open_prs():
                 capture_outcome(task)
             except Exception as e:
                 log.warning(f"  feedback capture failed: {e}")
+            capture_episode(task)
             issue_num = task.get("issueNumber")
             if issue_num:
-                run(f"gh issue edit {issue_num} --repo {GITHUB_REPO} "
+                run(f"{GH_BIN} issue edit {issue_num} --repo {GITHUB_REPO} "
                     f"--add-label cf-done --remove-label cf-pr-open 2>/dev/null")
             changed = True
 
@@ -1119,7 +1196,7 @@ def monitor_open_prs():
         tid = task["id"]
 
         # Check PR state via gh
-        rc, out, _ = run(f"gh pr view {pr_num} --json state,mergedAt,closedAt", cwd=repo_dir)
+        rc, out, _ = run(f"{GH_BIN} pr view {pr_num} --json state,mergedAt,closedAt", cwd=repo_dir)
         if rc != 0:
             continue
         try:
@@ -1145,8 +1222,8 @@ def monitor_open_prs():
             if issue_num:
                 repo = task.get("repo", "")
                 if repo:
-                    run(f"gh issue close {issue_num} --repo patrickkidd/{repo} 2>/dev/null")
-                    run(f"gh issue edit {issue_num} --repo patrickkidd/{repo} "
+                    run(f"{GH_BIN} issue close {issue_num} --repo patrickkidd/{repo} 2>/dev/null")
+                    run(f"{GH_BIN} issue edit {issue_num} --repo patrickkidd/{repo} "
                         f"--add-label cf-done --remove-label cf-pr-open 2>/dev/null")
 
             # Notify in task thread
@@ -1173,7 +1250,7 @@ def monitor_open_prs():
             if issue_num:
                 repo = task.get("repo", "")
                 if repo:
-                    run(f"gh issue edit {issue_num} --repo patrickkidd/{repo} "
+                    run(f"{GH_BIN} issue edit {issue_num} --repo patrickkidd/{repo} "
                         f"--remove-label cf-pr-open 2>/dev/null")
 
             thread_id = task.get("discordThreadId")
@@ -1343,7 +1420,7 @@ def check_master_ci():
             continue
 
         code, out, _ = run(
-            "gh run list --branch master --limit 1 --json conclusion,databaseId",
+            f"{GH_BIN} run list --branch master --limit 1 --json conclusion,databaseId",
             cwd=repo_dir,
         )
         if code != 0 or not out:
@@ -1361,7 +1438,7 @@ def check_master_ci():
         log.info(f"  CI-fix: {repo} master CI FAILED (run {run_id}). Enqueuing fix task.")
 
         _, fail_log, _ = run(
-            f"gh run view {run_id} --log-failed 2>/dev/null | tail -50",
+            f"{GH_BIN} run view {run_id} --log-failed 2>/dev/null | tail -50",
             cwd=repo_dir,
         )
 
@@ -1484,7 +1561,7 @@ def _fetch_pr_comments(gh_repo, pr_num):
 
     # Issue comments (general PR comments)
     rc, out, _ = run(
-        f"gh pr view {pr_num} --repo {gh_repo} "
+        f"{GH_BIN} pr view {pr_num} --repo {gh_repo} "
         f"--json comments --jq '.comments | sort_by(.createdAt)'"
     )
     if rc == 0 and out:
@@ -1502,7 +1579,7 @@ def _fetch_pr_comments(gh_repo, pr_num):
 
     # Review comments (inline code comments)
     rc2, out2, _ = run(
-        f"gh api repos/{gh_repo}/pulls/{pr_num}/comments "
+        f"{GH_BIN} api repos/{gh_repo}/pulls/{pr_num}/comments "
         f"--jq 'sort_by(.created_at)'"
     )
     if rc2 == 0 and out2:
@@ -1522,7 +1599,7 @@ def _fetch_pr_comments(gh_repo, pr_num):
 
     # Review bodies (top-level review comments like from Gemini)
     rc3, out3, _ = run(
-        f"gh pr view {pr_num} --repo {gh_repo} "
+        f"{GH_BIN} pr view {pr_num} --repo {gh_repo} "
         f"--json reviews --jq '.reviews | sort_by(.submittedAt)'"
     )
     if rc3 == 0 and out3:
@@ -1676,7 +1753,7 @@ def check_pr_comments():
 
         # For 'done' tasks, verify the PR is actually still open
         if task["status"] == "done":
-            rc, out, _ = run(f"gh pr view {pr_num} --repo {gh_repo} --json state --jq .state")
+            rc, out, _ = run(f"{GH_BIN} pr view {pr_num} --repo {gh_repo} --json state --jq .state")
             if rc != 0 or out.strip().upper() != "OPEN":
                 continue
 
@@ -1715,7 +1792,7 @@ def check_pr_comments():
         )
         repo_dir = task.get("repoDir", str(DEV_REPO))
         run(
-            f"gh pr comment {pr_num} --repo {gh_repo} --body {json.dumps(ack_body)}",
+            f"{GH_BIN} pr comment {pr_num} --repo {gh_repo} --body {json.dumps(ack_body)}",
             cwd=repo_dir,
         )
 
@@ -1760,7 +1837,7 @@ def check_pr_mentions():
 
         # Fetch open PRs
         rc, out, _ = run(
-            f"gh pr list --repo {gh_repo} --json number,title,headRefName --limit 30"
+            f"{GH_BIN} pr list --repo {gh_repo} --json number,title,headRefName --limit 30"
         )
         if rc != 0 or not out:
             continue
@@ -1856,7 +1933,7 @@ def check_pr_mentions():
             ack_body = (
                 "📩 **Task spawned** — addressing your comment."
             )
-            run(f"gh pr comment {pr_num} --repo {gh_repo} --body {json.dumps(ack_body)}")
+            run(f"{GH_BIN} pr comment {pr_num} --repo {gh_repo} --body {json.dumps(ack_body)}")
 
             log.info(f"  Spawned mention task {task_id} for {gh_repo} PR #{pr_num}")
 
@@ -2285,11 +2362,11 @@ async def main_loop():
                     issue_number = entry.get("issue_number", "")
                     if issue_number:
                         run(
-                            f"gh issue edit {issue_number} --repo {GITHUB_REPO} "
+                            f"{GH_BIN} issue edit {issue_number} --repo {GITHUB_REPO} "
                             f"--add-label cf-spawned 2>/dev/null"
                         )
                         run(
-                            f"gh issue comment {issue_number} --repo {GITHUB_REPO} "
+                            f"{GH_BIN} issue comment {issue_number} --repo {GITHUB_REPO} "
                             f"--body '🤖 Auto-spawned from queue as task `{task_id}`. PR incoming.'",
                             cwd=str(DEV_REPO),
                         )

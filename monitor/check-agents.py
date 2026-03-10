@@ -36,6 +36,7 @@ _bot_token_file = Path.home() / ".openclaw/monitor/hurin-bot-token"
 if _bot_token_file.exists():
     os.environ["GH_TOKEN"] = _bot_token_file.read_text().strip()
 
+GH_BIN       = Path.home() / ".local/bin/gh"
 REGISTRY     = Path.home() / ".openclaw/workspace-hurin/theapp/.clawdbot/active-tasks.json"
 LOG          = Path.home() / ".openclaw/monitor/monitor.log"
 FAILURES_DIR = Path.home() / ".openclaw/monitor/failures"
@@ -124,7 +125,7 @@ def capture_tmux_output(session, task_id):
 def get_pr(branch, repo_dir):
     """Get PR info. repo_dir is the subrepo (btcopilot or familydiagram) where PRs land."""
     code, out, _ = run(
-        f"gh pr list --head '{branch}' "
+        f"{GH_BIN} pr list --head '{branch}' "
         f"--json number,state,url,statusCheckRollup,reviewDecision --limit 1",
         cwd=repo_dir
     )
@@ -138,7 +139,7 @@ def get_pr(branch, repo_dir):
 def get_ci_failure_details(pr_num, repo_dir):
     """Pull specific check run failures via gh pr checks."""
     code, out, _ = run(
-        f"gh pr checks {pr_num} --json name,state,conclusion 2>/dev/null",
+        f"{GH_BIN} pr checks {pr_num} --json name,state,conclusion 2>/dev/null",
         cwd=repo_dir
     )
     if code != 0 or not out:
@@ -158,7 +159,7 @@ def get_ci_failure_details(pr_num, repo_dir):
 def get_review_comments(pr_num, repo_dir):
     """Get review comments if CHANGES_REQUESTED."""
     code, out, _ = run(
-        f"gh pr view {pr_num} --json reviews --jq '.reviews[-1].body' 2>/dev/null",
+        f"{GH_BIN} pr view {pr_num} --json reviews --jq '.reviews[-1].body' 2>/dev/null",
         cwd=repo_dir
     )
     if code == 0 and out:
@@ -291,7 +292,7 @@ def check_master_ci():
 
         # Check latest master CI run
         code, out, _ = run(
-            "gh run list --branch master --limit 1 --json conclusion,databaseId",
+            f"{GH_BIN} run list --branch master --limit 1 --json conclusion,databaseId",
             cwd=repo_dir,
         )
         if code != 0 or not out:
@@ -318,7 +319,7 @@ def check_master_ci():
 
         # Get failure log
         _, fail_log, _ = run(
-            f"gh run view {run_id} --log-failed 2>/dev/null | tail -50",
+            f"{GH_BIN} run view {run_id} --log-failed 2>/dev/null | tail -50",
             cwd=repo_dir,
         )
 
@@ -435,7 +436,7 @@ def _monitor_active_tasks(data, tasks, active):
                 log(f"  PR #{pr_num} found: {pr_url}")
                 # Compute risk level from files changed
                 _, diff_out, _ = run(
-                    f"gh pr diff {pr_num} --name-only",
+                    f"{GH_BIN} pr diff {pr_num} --name-only",
                     cwd=repo_dir
                 )
                 files_changed = [f for f in diff_out.splitlines() if f.strip()]
@@ -445,7 +446,7 @@ def _monitor_active_tasks(data, tasks, active):
                 # Label the GitHub issue as having an open PR
                 issue_num = task.get("issueNumber")
                 if issue_num:
-                    run(f"gh issue edit {issue_num} --repo patrickkidd/theapp "
+                    run(f"{GH_BIN} issue edit {issue_num} --repo patrickkidd/theapp "
                         f"--add-label cf-pr-open --remove-label cf-spawned 2>/dev/null")
                 # Post approvable artifact to #quick-wins
                 risk_emoji = {"high": "🔴 HIGH RISK", "medium": "🟡 MEDIUM RISK", "low": "🟢 LOW RISK"}[risk]
@@ -488,7 +489,7 @@ def _monitor_active_tasks(data, tasks, active):
                 # Label the GitHub issue as done
                 issue_num = task.get("issueNumber")
                 if issue_num:
-                    run(f"gh issue edit {issue_num} --repo patrickkidd/theapp "
+                    run(f"{GH_BIN} issue edit {issue_num} --repo patrickkidd/theapp "
                         f"--add-label cf-done --remove-label cf-pr-open 2>/dev/null")
             else:
                 log(f"  PR #{pr_num} open, CI pending.")
@@ -649,11 +650,11 @@ def drain_queue():
     # Comment on GitHub issue and update labels
     if issue_number:
         run(
-            f"gh issue edit {issue_number} --repo patrickkidd/theapp "
+            f"{GH_BIN} issue edit {issue_number} --repo patrickkidd/theapp "
             f"--add-label cf-spawned 2>/dev/null"
         )
         run(
-            f"gh issue comment {issue_number} --repo patrickkidd/theapp "
+            f"{GH_BIN} issue comment {issue_number} --repo patrickkidd/theapp "
             f"--body '🤖 Auto-spawned from queue as task `{task_id}`. PR incoming.'",
             cwd=str(DEV_REPO)
         )
