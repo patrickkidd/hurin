@@ -453,6 +453,69 @@ def fetch_open_prs():
         return []
 
 
+PRODUCT_REPOS = ["patrickkidd/familydiagram", "patrickkidd/btcopilot", "patrickkidd/fdserver"]
+
+
+def fetch_all_open_prs():
+    """Fetch open PRs across all product repos with review/CI/comment state."""
+    all_prs = []
+    for repo in PRODUCT_REPOS:
+        code, out, _ = run(
+            f'gh pr list --repo {repo} --json number,title,headRefName,'
+            f'isDraft,reviewDecision,statusCheckRollup,updatedAt,'
+            f'comments,reviews,author --limit 30',
+            timeout=30,
+        )
+        if code != 0 or not out:
+            continue
+        try:
+            prs = json.loads(out)
+        except json.JSONDecodeError:
+            continue
+        for pr in prs:
+            checks = pr.get("statusCheckRollup") or []
+            conclusions = [c.get("conclusion", "") for c in checks if c.get("conclusion")]
+            if all(c == "SUCCESS" for c in conclusions) and conclusions:
+                ci = "passing"
+            elif any(c == "FAILURE" for c in conclusions):
+                ci = "failing"
+            elif checks:
+                ci = "pending"
+            else:
+                ci = "none"
+
+            # Count unresolved comments
+            comment_count = len(pr.get("comments", []))
+            review_count = len([r for r in (pr.get("reviews") or [])
+                               if (r.get("body") or "").strip()])
+
+            # Age
+            updated = pr.get("updatedAt", "")
+            age_hours = 0
+            if updated:
+                try:
+                    updated_dt = datetime.fromisoformat(updated.replace("Z", "+00:00"))
+                    age_hours = int((datetime.now(timezone.utc) - updated_dt).total_seconds() / 3600)
+                except (ValueError, TypeError):
+                    pass
+
+            review_decision = pr.get("reviewDecision", "") or "PENDING"
+            all_prs.append({
+                "repo": repo.split("/")[1],
+                "number": pr["number"],
+                "title": pr.get("title", ""),
+                "author": pr.get("author", {}).get("login", ""),
+                "draft": pr.get("isDraft", False),
+                "review": review_decision,
+                "ci": ci,
+                "comments": comment_count,
+                "reviews": review_count,
+                "age_hours": age_hours,
+                "branch": pr.get("headRefName", ""),
+            })
+    return all_prs
+
+
 def fetch_ci_status(branch="master"):
     """Check CI status for a branch."""
     code, out, _ = run(
@@ -527,6 +590,7 @@ def collect_github_data():
     raw_items = fetch_project_items()
     goals, ungrouped = parse_project_items(raw_items)
     open_prs = fetch_open_prs()
+    all_repo_prs = fetch_all_open_prs()
     ci_master = fetch_ci_status("master")
     master_activity = fetch_master_activity(7)
 
@@ -542,6 +606,7 @@ def collect_github_data():
         "goals": goals,
         "ungrouped": ungrouped,
         "open_prs": open_prs,
+        "all_repo_prs": all_repo_prs,
         "ci_master": ci_master,
         "master_activity": master_activity,
         "collected_at": datetime.now(timezone.utc).isoformat(),
@@ -1044,6 +1109,47 @@ async def run_synthesis(metrics, events, github_data, anomalies):
     running = [t for t in registry_tasks if t.get("status") == "running"]
     pr_open = [t for t in registry_tasks if t.get("status") == "pr_open"]
 
+    # Build PR dashboard from all-repo PR data
+    all_repo_prs = github_data.get("all_repo_prs", [])
+    pr_dashboard_lines = []
+    if all_repo_prs:
+        # Group by review state
+        by_state = {"CHANGES_REQUESTED": [], "APPROVED": [], "PENDING": [], "REVIEW_REQUIRED": []}
+        ci_counts = {"passing": 0, "failing": 0, "pending": 0, "none": 0}
+        for pr in all_repo_prs:
+            state = pr.get("review", "PENDING")
+            by_state.setdefault(state, []).append(pr)
+            ci_counts[pr.get("ci", "none")] = ci_counts.get(pr.get("ci", "none"), 0) + 1
+
+        pr_dashboard_lines.append(f"  Total open: {len(all_repo_prs)} | "
+                                  f"CI: {ci_counts['passing']} passing, "
+                                  f"{ci_counts['failing']} failing, "
+                                  f"{ci_counts['pending']} pending")
+        pr_dashboard_lines.append("")
+
+        for state_name in ["CHANGES_REQUESTED", "APPROVED", "PENDING", "REVIEW_REQUIRED"]:
+            prs_in_state = by_state.get(state_name, [])
+            if not prs_in_state:
+                continue
+            pr_dashboard_lines.append(f"  ### {state_name} ({len(prs_in_state)})")
+            for pr in prs_in_state:
+                flags = []
+                if pr.get("draft"):
+                    flags.append("DRAFT")
+                if pr["ci"] == "failing":
+                    flags.append("CI FAILING")
+                if pr["age_hours"] > 48:
+                    flags.append(f"STALE {pr['age_hours']}h")
+                if pr["comments"] + pr["reviews"] > 0:
+                    flags.append(f"{pr['comments']+pr['reviews']} comments")
+                flag_str = f" [{', '.join(flags)}]" if flags else ""
+                pr_dashboard_lines.append(
+                    f"    - {pr['repo']} PR #{pr['number']}: {pr['title']}"
+                    f" (by {pr['author']}, CI: {pr['ci']}){flag_str}"
+                )
+            pr_dashboard_lines.append("")
+    pr_dashboard = "\n".join(pr_dashboard_lines) if pr_dashboard_lines else "  No open PRs across any repo"
+
     # Trust ledger summary
     trust_summary_text = ""
     try:
@@ -1134,8 +1240,11 @@ Do NOT propose spawn candidates in areas where Patrick has recent direct commits
 ## Successful PR Patterns
 {_load_pr_patterns_summary()}
 
-## PRs Awaiting Review
-{chr(10).join(f"  - PR #{t.get('pr', '')}: {t.get('description', '')}" for t in pr_open) or "  None"}
+## Open PRs Dashboard (all repos)
+{pr_dashboard}
+
+## Agent PRs Awaiting Review
+{chr(10).join(f"  - PR #{t.get('pr', '')}: {t.get('description', '')} ({t.get('repo', '')})" for t in pr_open) or "  None"}
 
 ## Recent Recommendations (DO NOT REPEAT)
 The following recommendations have already appeared in recent syntheses.

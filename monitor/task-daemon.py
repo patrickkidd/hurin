@@ -1361,6 +1361,471 @@ def check_master_ci():
         CI_FIX_COOLDOWN_FILE.write_text(json.dumps(cooldowns, indent=2))
 
 # ---------------------------------------------------------------------------
+# PR comment monitoring — auto follow-up from GitHub PR comments
+# ---------------------------------------------------------------------------
+
+PR_COMMENT_MAX_AGE = 7 * 24 * 3600  # Watch PRs from last 7 days
+PR_COOLDOWN_SECS = 30 * 60  # 30 min cooldown after processing comments on a PR
+PR_COOLDOWN_FILE = MONITOR_DIR / "pr-comment-cooldowns.json"
+BOT_GITHUB_USER = "patrickkidd-hurin"
+BOSS_GITHUB_USER = "patrickkidd"
+REVIEWED_BY_CLAUDE_LABEL = "reviewed-by-claude"
+PR_MENTION_REPOS = ["patrickkidd/familydiagram", "patrickkidd/btcopilot", "patrickkidd/fdserver"]
+
+# In-memory tracking: {tracking_key: last_comment_id}
+_pr_last_seen_comment = {}
+_pr_followup_pending = set()
+# For @mention tracking: {"repo:pr_num": last_comment_id}
+_pr_mention_last_seen = {}
+_pr_mention_pending = set()
+
+
+def _load_pr_cooldowns():
+    """Load per-PR cooldowns from disk (survives restarts)."""
+    if PR_COOLDOWN_FILE.exists():
+        try:
+            return json.loads(PR_COOLDOWN_FILE.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
+
+
+def _save_pr_cooldowns(cooldowns):
+    """Persist per-PR cooldowns to disk."""
+    PR_COOLDOWN_FILE.write_text(json.dumps(cooldowns, indent=2))
+
+
+def _set_pr_cooldown(pr_key):
+    """Set cooldown for a PR (key = 'repo:pr_num')."""
+    cooldowns = _load_pr_cooldowns()
+    cooldowns[pr_key] = time.time()
+    _save_pr_cooldowns(cooldowns)
+
+
+def _is_pr_on_cooldown(pr_key):
+    """Check if a PR is still in cooldown period."""
+    cooldowns = _load_pr_cooldowns()
+    last = cooldowns.get(pr_key, 0)
+    return (time.time() - last) < PR_COOLDOWN_SECS
+
+
+def _is_task_running_for_pr(pr_key):
+    """Check if a task is currently running or queued for this PR.
+
+    pr_key format: 'repo:pr_num'
+    """
+    repo, pr_num_str = pr_key.split(":", 1)
+    pr_num = int(pr_num_str)
+    data = load_registry()
+
+    # Check registry for running tasks on this PR
+    for task in data.get("tasks", []):
+        if task.get("repo") == repo and task.get("pr") == pr_num:
+            if task["status"] == "running":
+                return True
+
+    # Check queue for pending tasks on this PR
+    qdata = load_queue()
+    for entry in qdata.get("queue", []):
+        if entry.get("repo") == repo:
+            # Match by task_id containing the PR number (mention tasks)
+            # or by task_id matching a registry task with this PR
+            tid = entry.get("task_id", "")
+            # Check if this queued entry's task has this PR
+            for task in data.get("tasks", []):
+                if task["id"] == tid and task.get("pr") == pr_num:
+                    return True
+            # Check mention task IDs (format: pr-mention-{repo}-{pr_num}-{ts})
+            if tid.startswith(f"pr-mention-{repo}-{pr_num}-"):
+                return True
+
+    return False
+
+
+def _fetch_pr_comments(gh_repo, pr_num):
+    """Fetch all comments/reviews on a PR, return unified sorted list."""
+    all_comments = []
+
+    # Issue comments (general PR comments)
+    rc, out, _ = run(
+        f"gh pr view {pr_num} --repo {gh_repo} "
+        f"--json comments --jq '.comments | sort_by(.createdAt)'"
+    )
+    if rc == 0 and out:
+        try:
+            for c in json.loads(out):
+                all_comments.append({
+                    "id": c.get("id", c.get("url", "")),
+                    "author": c.get("author", {}).get("login", ""),
+                    "body": c.get("body", ""),
+                    "created": c.get("createdAt", ""),
+                    "type": "comment",
+                })
+        except json.JSONDecodeError:
+            pass
+
+    # Review comments (inline code comments)
+    rc2, out2, _ = run(
+        f"gh api repos/{gh_repo}/pulls/{pr_num}/comments "
+        f"--jq 'sort_by(.created_at)'"
+    )
+    if rc2 == 0 and out2:
+        try:
+            for c in json.loads(out2):
+                all_comments.append({
+                    "id": str(c.get("id", "")),
+                    "author": c.get("user", {}).get("login", ""),
+                    "body": c.get("body", ""),
+                    "created": c.get("created_at", ""),
+                    "type": "review_comment",
+                    "path": c.get("path", ""),
+                    "diff_hunk": c.get("diff_hunk", ""),
+                })
+        except json.JSONDecodeError:
+            pass
+
+    # Review bodies (top-level review comments like from Gemini)
+    rc3, out3, _ = run(
+        f"gh pr view {pr_num} --repo {gh_repo} "
+        f"--json reviews --jq '.reviews | sort_by(.submittedAt)'"
+    )
+    if rc3 == 0 and out3:
+        try:
+            for r in json.loads(out3):
+                body = (r.get("body") or "").strip()
+                if body:
+                    all_comments.append({
+                        "id": r.get("id", r.get("url", "")),
+                        "author": r.get("author", {}).get("login", ""),
+                        "body": body,
+                        "created": r.get("submittedAt", ""),
+                        "type": "review",
+                        "state": r.get("state", ""),
+                    })
+        except json.JSONDecodeError:
+            pass
+
+    all_comments.sort(key=lambda c: c.get("created", ""))
+    return all_comments
+
+
+def _find_new_comments(all_comments, last_seen):
+    """Find comments after last_seen, skipping bot's own comments.
+
+    Returns (new_comments, new_cursor, valid). If last_seen wasn't found
+    (e.g. deleted), returns ([], new_cursor, False).
+    """
+    if not all_comments:
+        return [], last_seen, True
+
+    found_last = False
+    new_comments = []
+    for c in all_comments:
+        if str(c["id"]) == str(last_seen):
+            found_last = True
+            continue
+        if found_last:
+            if c.get("author") == BOT_GITHUB_USER:
+                continue
+            if (c.get("body") or "").strip():
+                new_comments.append(c)
+
+    new_cursor = all_comments[-1]["id"]
+    return new_comments, new_cursor, found_last
+
+
+def _build_comment_prompt(new_comments, pr_num, gh_repo):
+    """Build a follow-up prompt from new PR comments."""
+    parts = []
+    for c in new_comments:
+        header = f"**{c['author']}** ({c['type']}"
+        if c.get("state"):
+            header += f", {c['state']}"
+        header += ")"
+        if c.get("path"):
+            header += f" on `{c['path']}`"
+        if c.get("diff_hunk"):
+            header += f"\n```\n{c['diff_hunk'][-300:]}\n```"
+        parts.append(f"{header}:\n{c['body']}")
+
+    combined = "\n\n---\n\n".join(parts)
+    return (
+        f"New PR comments on PR #{pr_num} (repo: {gh_repo}) that need to be addressed.\n\n"
+        f"Respond like a team member would — use your judgment. Here are the comments:\n\n"
+        f"{combined}\n\n"
+        f"Decide the appropriate action for each comment. Examples of what you might do:\n"
+        f"- **Code changes requested** → make changes, commit, push to the PR branch\n"
+        f"- **Question asked** → investigate the codebase and reply on the PR\n"
+        f"- **Prioritization/triage directive** → update labels, project board, close/reopen "
+        f"PR or linked issues as appropriate\n"
+        f"- **Request to close/deprioritize** → close the PR with a comment explaining why, "
+        f"update linked issue labels\n"
+        f"- **Request to rebase/update** → rebase, resolve conflicts, push\n"
+        f"- **Review feedback (Gemini, Claude, human)** → address valid points with code "
+        f"changes, push, and reply explaining what you fixed\n"
+        f"- **Informational/already resolved** → no action needed, but acknowledge if appropriate\n\n"
+        f"After pushing code changes, remove the `{REVIEWED_BY_CLAUDE_LABEL}` label to "
+        f"trigger re-review:\n"
+        f"  gh pr edit {pr_num} --repo {gh_repo} --remove-label {REVIEWED_BY_CLAUDE_LABEL}\n\n"
+        f"Reply on the PR with `gh pr comment {pr_num} --repo {gh_repo} --body '...'` "
+        f"summarizing what you did. Keep replies concise and professional."
+    )
+
+
+def _enqueue_pr_followup(task_id, repo, description, follow_up, session_id,
+                          branch, worktree, discord_thread_id):
+    """Enqueue a PR comment follow-up at the front of the queue."""
+    qdata = load_queue()
+    qdata.setdefault("queue", []).insert(0, {
+        "task_id": task_id,
+        "repo": repo,
+        "description": description,
+        "follow_up_prompt": follow_up,
+        "session_id": session_id,
+        "branch": branch,
+        "worktree": worktree,
+        "discordThreadId": discord_thread_id,
+        "queued_at": datetime.now(timezone.utc).isoformat(),
+    })
+    save_queue(qdata)
+
+
+def check_pr_comments():
+    """Check hurin-opened PRs for new comments → auto follow-up.
+
+    Monitors tasks with status pr_open or done (PR may still be open after
+    task completes). When Patrick or a reviewer (including Gemini) comments,
+    enqueues a follow-up that resumes the saved session.
+
+    Anti-thrashing:
+    - Per-PR cooldown (30 min) after processing — prevents feedback loops
+    - Running task gate — won't queue if task already running for this PR
+    - Pending flag — won't double-queue
+    """
+    data = load_registry()
+    now = time.time()
+
+    for task in data.get("tasks", []):
+        tid = task["id"]
+
+        # Check tasks with open or recently-completed PRs
+        if task["status"] not in ("pr_open", "done"):
+            continue
+        pr_num = task.get("pr")
+        session_id = task.get("session_id")
+        repo = task.get("repo", "")
+        if not pr_num or not session_id or not repo:
+            continue
+
+        pr_key = f"{repo}:{pr_num}"
+
+        # Anti-thrashing: skip if on cooldown
+        if _is_pr_on_cooldown(pr_key):
+            continue
+
+        # Anti-thrashing: skip if a task is already running/queued for this PR
+        if _is_task_running_for_pr(pr_key):
+            continue
+
+        # Skip if a follow-up is already pending (in-memory dedup)
+        if tid in _pr_followup_pending:
+            continue
+
+        # Skip old tasks
+        started = task.get("startedAt", 0)
+        if started and now - (started / 1000) > PR_COMMENT_MAX_AGE:
+            continue
+
+        gh_repo = f"patrickkidd/{repo}"
+
+        # For 'done' tasks, verify the PR is actually still open
+        if task["status"] == "done":
+            rc, out, _ = run(f"gh pr view {pr_num} --repo {gh_repo} --json state --jq .state")
+            if rc != 0 or out.strip().upper() != "OPEN":
+                continue
+
+        all_comments = _fetch_pr_comments(gh_repo, pr_num)
+        if not all_comments:
+            continue
+
+        # Initialize cursor on first encounter
+        if tid not in _pr_last_seen_comment:
+            _pr_last_seen_comment[tid] = all_comments[-1]["id"]
+            continue
+
+        new_comments, new_cursor, valid = _find_new_comments(
+            all_comments, _pr_last_seen_comment[tid]
+        )
+        _pr_last_seen_comment[tid] = new_cursor
+
+        if not valid or not new_comments:
+            continue
+
+        follow_up = _build_comment_prompt(new_comments, pr_num, gh_repo)
+        log.info(f"PR comment follow-up for {tid}: {len(new_comments)} new comment(s)")
+
+        _enqueue_pr_followup(
+            tid, repo, task.get("description", tid), follow_up, session_id,
+            task.get("branch", ""), task.get("worktree", ""),
+            task.get("discordThreadId", ""),
+        )
+        _pr_followup_pending.add(tid)
+        _set_pr_cooldown(pr_key)
+
+        # Acknowledge on the PR
+        ack_body = (
+            "📩 **Follow-up queued** — resuming agent session to address "
+            f"{len(new_comments)} comment(s)."
+        )
+        repo_dir = task.get("repoDir", str(DEV_REPO))
+        run(
+            f"gh pr comment {pr_num} --repo {gh_repo} --body {json.dumps(ack_body)}",
+            cwd=repo_dir,
+        )
+
+        # Also notify in Discord thread if present
+        thread_id = task.get("discordThreadId")
+        if thread_id:
+            _discord_api(
+                "POST",
+                f"https://discord.com/api/v10/channels/{thread_id}/messages",
+                {"content": f"📩 PR #{pr_num} has new comments — follow-up queued."},
+            )
+
+        log.info(f"  Enqueued PR comment follow-up for {tid}")
+
+
+def check_pr_mentions():
+    """Check all open PRs for Patrick's comments or @patrickkidd-hurin mentions.
+
+    Triggers on PRs NOT already tracked in the registry (those are handled by
+    check_pr_comments). Two triggers:
+    - Patrick comments on any open PR → always respond (he's the boss)
+    - Anyone @mentions the bot → respond
+
+    Spawns a fresh task since there's no session to resume.
+
+    Anti-thrashing:
+    - One active task per PR (pending flag keyed by repo:pr_num)
+    - Per-PR cooldown shared with check_pr_comments()
+    - Running task gate — won't spawn if already running for this PR
+    """
+    # Build set of PR keys already tracked by check_pr_comments()
+    data = load_registry()
+    tracked_prs = set()
+    for task in data.get("tasks", []):
+        repo = task.get("repo", "")
+        pr = task.get("pr")
+        if repo and pr and task["status"] in ("pr_open", "done"):
+            tracked_prs.add(f"{repo}:{pr}")
+
+    for gh_repo in PR_MENTION_REPOS:
+        repo_short = gh_repo.split("/")[1]
+
+        # Fetch open PRs
+        rc, out, _ = run(
+            f"gh pr list --repo {gh_repo} --json number,title,headRefName --limit 30"
+        )
+        if rc != 0 or not out:
+            continue
+        try:
+            prs = json.loads(out)
+        except json.JSONDecodeError:
+            continue
+
+        for pr in prs:
+            pr_num = pr["number"]
+            pr_key = f"{repo_short}:{pr_num}"
+
+            # Skip PRs already tracked by check_pr_comments()
+            if pr_key in tracked_prs:
+                continue
+
+            # Anti-thrashing: skip if on cooldown
+            if _is_pr_on_cooldown(pr_key):
+                continue
+
+            # Anti-thrashing: skip if a task is already running/queued for this PR
+            if _is_task_running_for_pr(pr_key):
+                continue
+
+            # Skip if already pending (one task per PR)
+            if pr_key in _pr_mention_pending:
+                continue
+
+            all_comments = _fetch_pr_comments(gh_repo, pr_num)
+            if not all_comments:
+                continue
+
+            # Initialize cursor on first encounter
+            if pr_key not in _pr_mention_last_seen:
+                _pr_mention_last_seen[pr_key] = all_comments[-1]["id"]
+                continue
+
+            new_comments, new_cursor, valid = _find_new_comments(
+                all_comments, _pr_mention_last_seen[pr_key]
+            )
+            _pr_mention_last_seen[pr_key] = new_cursor
+
+            if not valid or not new_comments:
+                continue
+
+            # Act on: Patrick's comments (always) OR @mentions from anyone
+            actionable_comments = [
+                c for c in new_comments
+                if c.get("author") == BOSS_GITHUB_USER
+                or f"@{BOT_GITHUB_USER}" in (c.get("body") or "")
+            ]
+            if not actionable_comments:
+                continue
+
+            # Generate a task ID for the fresh task
+            task_id = f"pr-mention-{repo_short}-{pr_num}-{int(time.time())}"
+            branch = pr.get("headRefName", f"pr-{pr_num}")
+
+            prompt = _build_comment_prompt(actionable_comments, pr_num, gh_repo)
+            # Wrap in a full task prompt since there's no session to resume
+            full_prompt = (
+                f"You've been asked to respond to comments on PR #{pr_num} in {gh_repo}.\n"
+                f"PR title: {pr.get('title', '')}\n"
+                f"Branch: {branch}\n\n"
+                f"First, check out the PR branch and understand the PR's changes:\n"
+                f"  git fetch origin {branch} && git checkout {branch}\n"
+                f"  gh pr diff {pr_num} --repo {gh_repo}\n\n"
+                f"{prompt}"
+            )
+
+            log.info(f"PR comment/mention on {gh_repo} PR #{pr_num}: {len(actionable_comments)} comment(s)")
+
+            # Write prompt to file
+            prompt_path = QUEUE_PROMPTS / f"{task_id}.txt"
+            prompt_path.write_text(full_prompt)
+
+            # Enqueue as a fresh task (no session to resume)
+            qdata = load_queue()
+            qdata.setdefault("queue", []).insert(0, {
+                "task_id": task_id,
+                "repo": repo_short,
+                "description": f"Respond to @mention on PR #{pr_num}",
+                "prompt_file": str(prompt_path),
+                "issue_number": "",
+                "branch": branch,
+                "queued_at": datetime.now(timezone.utc).isoformat(),
+            })
+            save_queue(qdata)
+            _pr_mention_pending.add(pr_key)
+            _set_pr_cooldown(pr_key)
+
+            # Acknowledge on the PR
+            ack_body = (
+                "📩 **Task spawned** — addressing your comment."
+            )
+            run(f"gh pr comment {pr_num} --repo {gh_repo} --body {json.dumps(ack_body)}")
+
+            log.info(f"  Spawned mention task {task_id} for {gh_repo} PR #{pr_num}")
+
+
+# ---------------------------------------------------------------------------
 # Thread reply monitoring — auto follow-up from Discord thread replies
 # ---------------------------------------------------------------------------
 
@@ -1793,8 +2258,15 @@ async def main_loop():
                             cwd=str(DEV_REPO),
                         )
 
-                    # Clear follow-up pending flag if this was a thread reply
+                    # Clear follow-up pending flags if this was a reply follow-up
                     _thread_followup_pending.discard(task_id)
+                    _pr_followup_pending.discard(task_id)
+                    # Clear mention pending — extract repo:pr from task_id
+                    # (format: pr-mention-{repo}-{pr_num}-{ts})
+                    if task_id.startswith("pr-mention-"):
+                        parts = task_id.split("-")
+                        if len(parts) >= 4:
+                            _pr_mention_pending.discard(f"{parts[2]}:{parts[3]}")
 
                     await run_task(entry)
                     continue  # Check for more work immediately
@@ -1802,6 +2274,14 @@ async def main_loop():
             # --- Monitor open PRs (every 5th cycle = ~2.5 min) ---
             if loop_count % 5 == 0:
                 monitor_open_prs()
+
+            # --- Check PR comments (every 4th cycle = ~2 min) ---
+            if loop_count % 4 == 1:
+                check_pr_comments()
+
+            # --- Check PR @mentions (every 10th cycle = ~5 min) ---
+            if loop_count % 10 == 4:
+                check_pr_mentions()
 
             # --- Check task thread replies (every 5th cycle = ~2.5 min) ---
             if loop_count % 5 == 2:
