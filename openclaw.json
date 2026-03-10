@@ -35,7 +35,8 @@
         "minimax/MiniMax-M2.5": {
           "alias": "m25",
           "params": {
-            "cacheRetention": "short"
+            "cacheRetention": "short",
+            "thinking": "medium"
           }
         }
       },
@@ -47,7 +48,7 @@
           "enabled": true
         }
       },
-      "thinkingDefault": "off",
+      "thinkingDefault": "medium",
       "typingIntervalSeconds": 6,
       "typingMode": "message",
       "heartbeat": {
@@ -65,17 +66,53 @@
     },
     "list": [
       {
-        "id": "hurin",
-        "name": "hurin",
-        "workspace": "/home/hurin/.openclaw/workspace-hurin",
-        "agentDir": "/home/hurin/.openclaw/agents/hurin/agent",
+        "id": "huor",
+        "name": "huor",
+        "workspace": "/home/hurin/.openclaw/workspace-huor",
+        "agentDir": "/home/hurin/.openclaw/agents/huor/agent",
         "model": "minimax/MiniMax-M2.5",
+        "skills": ["teamlead", "task", "trust", "dashboard", "research", "status"],
         "tools": {
           "allow": [
             "exec",
             "sessions_list",
             "sessions_history",
-            "session_status"
+            "session_status",
+            "sessions_send"
+          ]
+        }
+      },
+      {
+        "id": "tuor",
+        "name": "tuor",
+        "workspace": "/home/hurin/.openclaw/workspace-tuor",
+        "agentDir": "/home/hurin/.openclaw/agents/tuor/agent",
+        "model": "minimax/MiniMax-M2.5",
+        "skills": ["cofounder"],
+        "tools": {
+          "allow": [
+            "exec",
+            "sessions_list",
+            "sessions_history",
+            "session_status",
+            "sessions_send"
+          ]
+        }
+      },
+      {
+        "id": "beren",
+        "name": "beren",
+        "workspace": "/home/hurin/.openclaw/workspace-beren",
+        "agentDir": "/home/hurin/.openclaw/agents/beren/agent",
+        "model": "minimax/MiniMax-M2.5",
+        "skills": ["cos"],
+        "tools": {
+          "allow": [
+            "exec",
+            "sessions_list",
+            "sessions_history",
+            "session_status",
+            "sessions_send"
           ]
         }
       }
@@ -88,49 +125,18 @@
     "agentToAgent": {
       "enabled": true,
       "allow": [
-        "hurin"
+        "huor",
+        "tuor",
+        "beren"
       ]
     }
   },
   "bindings": [
     {
-      "agentId": "hurin",
+      "agentId": "huor",
       "match": {
         "channel": "discord",
-        "accountId": "hurin",
-        "peer": {
-          "kind": "channel",
-          "id": "1475607956698562690"
-        }
-      }
-    },
-    {
-      "agentId": "hurin",
-      "match": {
-        "channel": "discord",
-        "accountId": "hurin",
-        "peer": {
-          "kind": "channel",
-          "id": "1476739270663213197"
-        }
-      }
-    },
-    {
-      "agentId": "hurin",
-      "match": {
-        "channel": "discord",
-        "accountId": "hurin",
-        "peer": {
-          "kind": "channel",
-          "id": "1476950473893482587"
-        }
-      }
-    },
-    {
-      "agentId": "hurin",
-      "match": {
-        "channel": "discord",
-        "accountId": "hurin",
+        "accountId": "huor",
         "peer": {
           "kind": "channel",
           "id": "1476635425777914007"
@@ -138,24 +144,35 @@
       }
     },
     {
-      "agentId": "hurin",
+      "agentId": "huor",
       "match": {
         "channel": "discord",
-        "accountId": "hurin",
+        "accountId": "huor",
         "peer": {
           "kind": "channel",
-          "id": "1479984919353626674"
+          "id": "1478507314427334950"
         }
       }
     },
     {
-      "agentId": "hurin",
+      "agentId": "tuor",
       "match": {
         "channel": "discord",
-        "accountId": "hurin",
+        "accountId": "tuor",
         "peer": {
           "kind": "channel",
-          "id": "1478507314427334950"
+          "id": "1476739270663213197"
+        }
+      }
+    },
+    {
+      "agentId": "beren",
+      "match": {
+        "channel": "discord",
+        "accountId": "beren",
+        "peer": {
+          "kind": "channel",
+          "id": "1479984919353626674"
         }
       }
     }
@@ -193,7 +210,7 @@
         "idleHours": 24
       },
       "accounts": {
-        "hurin": {
+        "huor": {
           "enabled": true,
           "allowBots": true,
           "groupPolicy": "allowlist",
@@ -206,25 +223,56 @@
                 "1237951508742672431"
               ],
               "channels": {
-                "1475607956698562690": {
-                  "allow": true
-                },
                 "1476635425777914007": {
                   "allow": true
                 },
+                "1478507314427334950": {
+                  "allow": true
+                }
+              }
+            }
+          },
+          "token": "${HUOR_DISCORD_BOT_TOKEN}"
+        },
+        "tuor": {
+          "enabled": true,
+          "groupPolicy": "allowlist",
+          "historyLimit": 50,
+          "streaming": "off",
+          "guilds": {
+            "1474833522710548490": {
+              "requireMention": false,
+              "users": [
+                "1237951508742672431"
+              ],
+              "channels": {
                 "1476739270663213197": {
                   "allow": true
-                },
-                "1476950473893482587": {
-                  "allow": true
-                },
+                }
+              }
+            }
+          },
+          "token": "${TUOR_DISCORD_BOT_TOKEN}"
+        },
+        "beren": {
+          "enabled": true,
+          "groupPolicy": "allowlist",
+          "historyLimit": 50,
+          "streaming": "off",
+          "guilds": {
+            "1474833522710548490": {
+              "requireMention": false,
+              "users": [
+                "1237951508742672431"
+              ],
+              "channels": {
                 "1479984919353626674": {
                   "allow": true
                 }
               }
             }
           },
-          "token": "${DISCORD_BOT_TOKEN}"
+          "token": "${BEREN_DISCORD_BOT_TOKEN}"
         },
         "default": {
           "enabled": false,
@@ -261,6 +309,15 @@
         "enabled": true
       },
       "trust": {
+        "enabled": true
+      },
+      "dashboard": {
+        "enabled": true
+      },
+      "research": {
+        "enabled": true
+      },
+      "status": {
         "enabled": true
       }
     }

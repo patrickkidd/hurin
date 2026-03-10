@@ -13,20 +13,16 @@ Nothing requires your attention unless you want to steer it.
 
 ## Where to Run Commands
 
-**All `/slash` commands go in `#planning`** — that's hurin's primary channel. hurin routes them to the right place.
-
-Output lands in the relevant channel:
-- Co-founder briefings → `#co-founder`
-- COS digests → `#chief-of-staff`
-- Task progress → `#tasks`
-- Spawn candidates + synthesis → `#ops`
-- Revenue-impacting PRs → `#quick-wins`
+Commands go to the relevant agent's channel:
+- **Huor** (`#team-lead`): `/teamlead`, `/dashboard`, `/status`, `/task`, `/trust` — planning, tasks, synthesis
+- **Tuor** (`#co-founder`): `/cofounder`, `/research` — strategic briefings, KB research
+- **Beren** (`#chief-of-staff`): `/cos` — strategic digests, system evaluation
 
 ## First Week Checklist
 
 ### 1. Run a KB-aware co-founder lens (5 min of your time)
 
-Pick one and fire it off in `#planning`. This seeds the knowledge base with real research:
+Pick one and fire it off in `#co-founder`. This seeds the knowledge base with real research:
 
 ```
 /cofounder market-research    ← competitors, pricing, market landscape
@@ -65,7 +61,7 @@ This shows: what needs your attention, system health, what happened recently.
 When you come home from your day job and have 15 min:
 
 1. **`/dashboard`** — 30-second glance. Green/yellow/red health. Items needing attention.
-2. **Approve or reject** any propose-only spawn candidates in `#ops` (if any)
+2. **Approve or reject** any propose-only spawn candidates in `#team-lead` (if any)
 3. **Read COS digest** if it's Tuesday/Friday (`/cos read`) — 2 min
 4. **Done.** The system handles the rest.
 

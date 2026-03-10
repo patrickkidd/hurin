@@ -124,9 +124,9 @@ review_repo() {
             DIFF="$DIFF"$'\n\n[Diff truncated at 2000 lines]'
         fi
 
-        # Run Claude review
+        # Run Claude review via Agent SDK (cc-query.py)
         local REVIEW
-        REVIEW=$(claude -p "You are reviewing a pull request for the Family Diagram project ($REPO_NAME repo — Python/PyQt5/Flask).
+        REVIEW=$(echo "You are reviewing a pull request for the Family Diagram project ($REPO_NAME repo — Python/PyQt5/Flask).
 
 PR #$PR_NUM: $PR_TITLE
 Branch: $PR_BRANCH
@@ -143,7 +143,7 @@ Be concise. Focus on actual problems, not style nitpicks. If the PR looks good, 
 Format your review as a bulleted list of findings, or 'LGTM - no issues found' if clean.
 
 DIFF:
-$DIFF" 2>/dev/null) || true
+$DIFF" | uv run --directory "$HOME/.openclaw/monitor" python "$HOME/.openclaw/monitor/cc-query.py" --description "PR review: $REPO_NAME #$PR_NUM" --max-turns 3 2>/dev/null) || true
 
         if [[ -z "$REVIEW" ]]; then
             FAIL_COUNT=$((FAIL_COUNT + 1))

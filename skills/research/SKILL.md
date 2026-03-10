@@ -9,8 +9,14 @@ Runs an Opus research session that searches the web for information on `<topic>`
 ## Modes
 
 ### `/research <topic>`
-1. Run: `nohup uv run --directory ~/.openclaw/monitor python ~/.openclaw/monitor/cc-query.py <<< "Research the following topic and write findings to the knowledge base at ~/.openclaw/knowledge/. Topic: <topic>. Use WebSearch and WebFetch to gather information. Write a structured markdown file with your findings. Include 'Last verified: $(date +%Y-%m-%d)' at the top. Update ~/.openclaw/knowledge/research-log.md to mark the topic as completed." &`
-2. Reply ONLY: "Researching **<topic>** — check #tasks in ~5-10 minutes."
+1. Generate a task ID from the topic (e.g., `research-<sanitized-topic>`).
+2. Run:
+
+```
+exec(command="/bin/bash /home/hurin/.openclaw/monitor/task-cli.sh spawn theapp research-<sanitized-topic> 'Research the following topic and write findings to the knowledge base at ~/.openclaw/knowledge/. Topic: <topic>. Use WebSearch and WebFetch to gather information. Write a structured markdown file with your findings. Include Last verified: <today> at the top. Update ~/.openclaw/knowledge/research-log.md to mark the topic as completed.'")
+```
+
+3. Reply ONLY: "Researching **<topic>** — check #tasks in ~5-10 minutes."
 
 ### `/research list`
 1. Read `~/.openclaw/knowledge/research-log.md`

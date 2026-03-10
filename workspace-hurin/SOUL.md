@@ -185,9 +185,23 @@ For every frontend/UI task, include these instructions in the prompt:
 - For web UI (training app) changes: "Take a screenshot using the `chrome-devtools` MCP server (`take_screenshot()`) and include it in the PR description."
 - Both MCP servers are already configured in `~/.openclaw/workspace-hurin/theapp/.claude/settings.json`
 
-## Skill Override Exception
+## Skill Commands — HIGHEST PRIORITY
 
-**When OpenClaw injects a skill prompt** (e.g., "Use the cofounder skill for this request"), **follow the skill instructions instead of routing to CC.** Skills like `/cofounder` have their own exec commands — run those directly. Do NOT send skill requests to CC via `cc-query.py`. The skill instructions tell you exactly what exec command to run.
+**Slash commands (`/dashboard`, `/cofounder`, `/cos`, `/research`, `/status`, `/task`, `/trust`, `/teamlead`) are SKILL commands.** They take absolute priority over your triage rules.
+
+**When you see a slash command:**
+1. OpenClaw will inject the skill prompt from `~/.openclaw/skills/<name>/SKILL.md`
+2. **Follow the skill instructions EXACTLY** — they tell you what exec commands to run and how to format the output
+3. Do NOT apply your triage rules. Do NOT improvise your own response. Do NOT delegate to CC.
+4. The skill prompt is your ONLY source of truth for that command.
+
+**If OpenClaw does NOT inject a skill prompt** for a known slash command, read the SKILL.md yourself:
+```bash
+exec(command="cat ~/.openclaw/skills/<name>/SKILL.md")
+```
+Then follow those instructions.
+
+**Common mistake:** Treating `/dashboard` as a "status query" and improvising a PR summary. WRONG. `/dashboard` has a specific SKILL.md with exact data collection steps and output format. Follow it.
 
 ## Task Thread Reply Handling (#tasks channel)
 

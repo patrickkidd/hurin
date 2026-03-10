@@ -1,79 +1,81 @@
 ---
 name: dashboard
-description: "Executive dashboard — 30-second glance at what matters. Shows: items needing attention, system health (green/yellow/red), recent activity, and quick actions."
+description: "Executive dashboard — 30-second glance at what matters. Director-level: product progress, system evolution, items needing your decision."
 user-invocable: true
 metadata: { "openclaw": { "always": true, "emoji": "📊" } }
 ---
 
-# /dashboard — Executive Dashboard
+# /dashboard — Director's Dashboard
 
-The "tired after work" view. Shows only what matters in 30 seconds.
+You are producing a dashboard for a **Director of Engineering** who just got home from a cognitively heavy day job. He has 30 seconds. He does NOT care about PRs, CI, queues, or agent plumbing. He cares about:
+
+1. Is the product moving forward?
+2. Is the agent system getting smarter?
+3. Do I need to decide anything right now?
 
 ## Execution
 
-Gather data by reading files and running commands, then format a concise dashboard. **Be ruthlessly concise** — Patrick has 30 seconds.
+Run these exec commands and read these files. Then format the output EXACTLY as specified below.
 
-### Step 1: Collect
+### Data to collect
 
 ```bash
-# Service health (3 services)
+# 1. Product momentum — what did I accomplish this week?
+gh api "repos/patrickkidd/btcopilot/commits?sha=master&since=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)&per_page=5" --jq '.[].commit.message' 2>/dev/null | head -5
+gh api "repos/patrickkidd/familydiagram/commits?sha=master&since=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)&per_page=5" --jq '.[].commit.message' 2>/dev/null | head -5
+
+# 2. Service health — one line
 systemctl --user is-active openclaw-gateway openclaw-taskdaemon openclaw-teamlead
 
-# Open PRs needing review
-gh pr list --repo patrickkidd/btcopilot --author patrickkidd-hurin --state open --json number,title,createdAt 2>/dev/null
-gh pr list --repo patrickkidd/familydiagram --author patrickkidd-hurin --state open --json number,title,createdAt 2>/dev/null
-
-# Propose-only candidates in #ops (check recent discord? skip if not trivial)
-
-# Queue + running tasks
-cat ~/.openclaw/monitor/task-queue.json 2>/dev/null
-cat ~/.openclaw/workspace-hurin/theapp/.clawdbot/active-tasks.json 2>/dev/null
+# 3. Items needing decision — open bot PRs across repos
+gh pr list --repo patrickkidd/btcopilot --author patrickkidd-hurin --state open --json number,title --jq '.[] | "#\(.number): \(.title)"' 2>/dev/null
+gh pr list --repo patrickkidd/familydiagram --author patrickkidd-hurin --state open --json number,title --jq '.[] | "#\(.number): \(.title)"' 2>/dev/null
 ```
 
-Also read:
-- `~/.openclaw/knowledge/self/spawn-policy.json` — any category near graduation?
-- Last line of `~/.openclaw/knowledge/self/telemetry.jsonl` — latest signals
-- `~/.openclaw/chief-of-staff/digests/` — when was last COS digest?
-- `~/.openclaw/team-lead/syntheses/` — when was last synthesis?
+Also read (exec cat or similar):
+- Last 3 lines of `~/.openclaw/knowledge/self/telemetry.jsonl` — for master_topics entry (what areas you've been working in)
+- `~/.openclaw/knowledge/self/spawn-policy.json` — just the category count and best accuracy
+- Count of files in `~/.openclaw/knowledge/` subdirs — is KB growing?
+- When was last COS digest? `ls -t ~/.openclaw/chief-of-staff/digests/digest-*.md | head -1`
+- When was last synthesis? `ls -t ~/.openclaw/team-lead/syntheses/*.json | head -1`
 
-### Step 2: Format
+### Output format
 
-Output EXACTLY this format (skip sections with nothing to show):
+Output EXACTLY this structure. Skip empty sections. **UNDER 12 LINES TOTAL.**
 
 ```
 📊 **Dashboard**
 
-🔴/🟡/🟢 **Health:** <one-line summary>
-  Services: gw=✅ td=✅ tl=✅ (or ❌ if down)
-  Last synthesis: <date> | Last COS digest: <date>
+🟢/🟡/🔴 **System:** <all services up|issue> | Last digest: <date> | Last synthesis: <date>
 
-📬 **Needs Your Attention** (N items)
-  - PR #<n>: <title> (<repo>, <age>) — review & merge or close
-  - Spawn candidate: <title> — reply APPROVE in #ops or ignore
-  (or: Nothing right now. ✨)
+🚀 **Product This Week**
+  <N> commits across repos. Focus areas: <top 2-3 topics from telemetry, human-readable>
+  (e.g. "AI extraction pipeline, personal app UI, test fixes")
 
-📈 **Since You Last Looked**
-  - <N> master commits by you (top areas: <topics>)
-  - <N> PRs resolved (<merged> merged, <closed> closed)
-  - KB: <N> entries across <N> domains
-  - Spawn policy: best category <name> at <N>% (needs <N> more for auto_spawn)
+🧠 **System Evolution**
+  KB: <N> entries | Spawn policy: <N> categories, best at <N>% | <growing|stagnant>
 
-⚡ **Quick Actions**
-  - `/cofounder market-research` — seed KB with competitor intel
-  - `/cos read` — read latest strategic digest
-  (only show actions that are actually useful right now)
+📬 **Needs Your Decision** (<N> items)
+  - <item description> — <what to do>
+  (or: Nothing. System is autonomous. ✨)
+
+⚡ <one contextual suggestion, e.g. "/cofounder market-research to seed competitor intel" or "/cos read for Tuesday's digest">
 ```
 
-### Formatting Rules
+### Rules for each section
 
-- **Health is ONE color:** 🟢 if all services up + synthesis ran this week. 🟡 if synthesis is overdue or a service restarted recently. 🔴 if a service is down.
-- **Needs Attention** is the ONLY section that should make Patrick act. If empty, say "Nothing right now."
-- **Since You Last Looked** — use telemetry data. Keep to 3-4 bullets max.
-- **Quick Actions** — 1-2 contextually relevant suggestions, not a menu of everything.
-- Total output should be **under 15 lines**. If you're over 15 lines, cut.
+**System** — ONE emoji color. 🟢 = all 3 services active + synthesis this week. 🟡 = synthesis overdue or service bounced. 🔴 = service down. Just the facts, no detail.
 
-## Rules
-- Do NOT use Agent SDK or launch background processes
-- Read files directly and format
-- Be RUTHLESSLY concise — this is a 30-second glance, not a report
-- Override the normal "route to CC" rule — just read and report
+**Product This Week** — This is about PATRICK's work, not the agents. Summarize master commit topics in plain English. "AI extraction pipeline" not "btcopilot commits". This is the most important section — it reminds Patrick what he accomplished.
+
+**System Evolution** — Is the self-evolving system actually evolving? KB entry count, best spawn category accuracy, trend direction. One line.
+
+**Needs Your Decision** — ONLY items requiring a human yes/no. Open bot PRs to merge or close. Spawn candidates to approve. If nothing, say "Nothing." Do NOT list informational items here.
+
+**Quick action** — ONE line. Pick the most useful thing right now. If COS digest is unread, suggest that. If KB is empty, suggest a research topic. If nothing is pressing, suggest nothing.
+
+## Hard rules
+- Do NOT route to CC. Do NOT use Agent SDK. Just exec + read + format.
+- Do NOT list PR details, CI status, queue depth, task registry, or agent plumbing.
+- Do NOT exceed 12 lines. If you're over, cut the least important content.
+- Speak like a dashboard, not a report. No prose. No explanations.

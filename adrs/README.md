@@ -11,8 +11,9 @@ Cross-project architectural decisions affecting both btcopilot and familydiagram
 | [ADR-0003](ADR-0003-hurin-lockdown-validation.md) | Accepted | Hurin tool lockdown (exec-only) after autonomous action incident; thinking-off cost validation |
 | [ADR-0004](ADR-0004-co-founder-system.md) | Accepted | Co-founder strategic briefing system: 9 rotating lenses, journal memory, action pipeline |
 | [ADR-0005](ADR-0005-action-system.md) | Accepted | Quality-gated action pipeline: GitHub Issues as source of truth, approval-required spawning |
-| [ADR-0006](ADR-0006-team-lead-daemon.md) | Accepted | Team lead daemon: metrics engine, hourly synthesis, proactive auto-spawning toward MVP goals |
+| [ADR-0006](ADR-0006-team-lead-daemon.md) | Superseded | Team lead daemon: metrics engine, hourly synthesis, proactive auto-spawning toward MVP goals (daemon replaced by cron in ADR-0008) |
 | [ADR-0007](ADR-0007-self-evolving-system.md) | Accepted | Self-evolving agent system: KB, telemetry, spawn policy engine, session learner, prompt archaeology |
+| [ADR-0008](ADR-0008-three-agent-architecture.md) | Accepted | Three-agent architecture (Huor/Tuor/Beren) + team-lead daemon decomposition into cron jobs |
 
 ## Template
 

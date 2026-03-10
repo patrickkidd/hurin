@@ -1,6 +1,6 @@
 ---
 name: cofounder
-description: "Run a co-founder strategic briefing lens on demand. Usage: /cofounder <lens-name>. Available lenses: project-pulse, product-vision, architecture, wild-ideas, market-research, website-audit, customer-support, training-programs, process-retro, evolution. Also: followup, read, approve, refine, actions, status."
+description: "Run a co-founder strategic briefing lens on demand. Usage: /cofounder <lens-name>. Available lenses: project-pulse, product-vision, architecture, wild-ideas, market-research, website-audit, customer-support, training-programs, process-retro, evolution. Also: read, approve, refine, actions, status."
 user-invocable: true
 metadata: { "openclaw": { "always": true, "emoji": "🧠" } }
 ---
@@ -23,12 +23,13 @@ metadata: { "openclaw": { "always": true, "emoji": "🧠" } }
 >
 > **Commands:**
 > - `/cofounder <lens>` — Run a lens (posts to #co-founder in ~5-10 min)
-> - `/cofounder followup <lens> <question>` — Continue the conversation from the last briefing
 > - `/cofounder read <lens>` — Show the latest briefing for a lens
 > - `/cofounder approve <action-id>` — Approve and spawn a proposed action
 > - `/cofounder refine <action-id> <feedback>` — Refine an action before approving
 > - `/cofounder actions` — List pending actions awaiting approval
 > - `/cofounder status` — Global status dashboard (PRs to review, running tasks, queue, pending approvals)
+>
+> For follow-ups, reply in the briefing thread — native thread bindings handle session resumption.
 
 ---
 
@@ -46,24 +47,7 @@ exec(command="nohup /bin/bash /home/hurin/.openclaw/co-founder/co-founder.sh <le
 
 ---
 
-### Mode 2: Follow up on a briefing
-
-**If the first argument is "followup"** (e.g., `/cofounder followup architecture What about the database schema?`):
-
-1. Parse the lens name (second word) and the message (everything after the lens name).
-2. Run this exec command:
-
-```
-exec(command="cd /home/hurin/Projects/theapp && SESSION_ID=$(cat /home/hurin/.openclaw/co-founder/sessions/<lens-name>-session.txt 2>/dev/null) && /home/hurin/.local/bin/claude -p --model claude-opus-4-6 --dangerously-skip-permissions --resume \"$SESSION_ID\" <<'PROMPT'\n<the follow-up message>\nPROMPT")
-```
-
-3. Relay CC's response **verbatim** to the channel. This resumes the original briefing session, so CC has full context of its analysis.
-
-If the session file doesn't exist, reply: "No session found for `<lens-name>`. Run `/cofounder <lens-name>` first to generate a briefing, then follow up."
-
----
-
-### Mode 3: Read the latest briefing
+### Mode 2: Read the latest briefing
 
 **If the first argument is "read"** (e.g., `/cofounder read architecture`):
 
@@ -72,7 +56,7 @@ If the session file doesn't exist, reply: "No session found for `<lens-name>`. R
 
 ---
 
-### Mode 4: Approve an action
+### Mode 3: Approve an action
 
 **If the first argument is "approve"** (e.g., `/cofounder approve project-pulse-2026-02-27-1`):
 
@@ -87,7 +71,7 @@ exec(command="/bin/bash /home/hurin/.openclaw/co-founder/action-approve.sh <acti
 
 ---
 
-### Mode 5: Refine an action
+### Mode 4: Refine an action
 
 **If the first argument is "refine"** (e.g., `/cofounder refine project-pulse-2026-02-27-1 change the approach to use React instead`):
 
@@ -102,7 +86,7 @@ exec(command="/bin/bash /home/hurin/.openclaw/co-founder/action-refine.sh <actio
 
 ---
 
-### Mode 6: List pending actions
+### Mode 5: List pending actions
 
 **If the first argument is "actions"** (e.g., `/cofounder actions`):
 
@@ -111,7 +95,7 @@ exec(command="/bin/bash /home/hurin/.openclaw/co-founder/action-refine.sh <actio
 
 ---
 
-### Mode 7: Global status dashboard
+### Mode 6: Global status dashboard
 
 **If the first argument is "status"** (e.g., `/cofounder status`):
 
@@ -121,9 +105,9 @@ exec(command="/bin/bash /home/hurin/.openclaw/co-founder/action-refine.sh <actio
 ---
 
 **CRITICAL RULES for this skill:**
-- Do NOT route to CC via `claude -p` for Mode 1. The script internally calls CC. You are just a launch button.
-- Mode 2 (followup) and Mode 5 (refine) DO call CC directly — this is intentional, they resume the briefing session.
-- Mode 4 (approve) and Mode 6 (actions) are simple script executions — just run and relay.
+- Do NOT route to CC directly for Mode 1. The script internally calls CC. You are just a launch button.
+- Mode 4 (refine) resumes the CC session via the script — async, not blocking.
+- Mode 3 (approve) and Mode 5 (actions) are simple script executions — just run and relay.
 - Do NOT read any files yourself.
 - Do NOT add commentary or summaries beyond what's specified above.
 - This overrides the normal "route everything to CC" rule. Just exec and confirm.

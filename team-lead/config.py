@@ -75,7 +75,7 @@ WORKFLOW_STATUSES = {"Todo", "In Progress", "Done", "No Milestone"}
 # Discord
 # ---------------------------------------------------------------------------
 
-DISCORD_OPS_CHANNEL_ID = "1478507314427334950"
+DISCORD_TEAMLEAD_CHANNEL_ID = "1478507314427334950"
 DISCORD_GUILD_ID = "1474833522710548490"
 
 # ---------------------------------------------------------------------------
@@ -90,7 +90,7 @@ BIZ_HOUR_END = 22    # 10:00 PM
 # Autonomy
 # ---------------------------------------------------------------------------
 
-AUTONOMY_TIER = 1  # Policy engine governs per-category; not a global kill switch
+AUTONOMY_TIER = 0  # Auto-spawning paused per Patrick (2026-03-10) — too many low-quality tasks
 MAX_CONCURRENT_SPAWNS = 2
 
 # ---------------------------------------------------------------------------

@@ -152,7 +152,7 @@ Capacity: 3-4 concurrent worktrees easily fit on 16GB.
 | #tasks | 1476635425777914007 | hurin | Task threads (daemon + cc-query), thread reply follow-ups |
 | #co-founder | 1476739270663213197 | hurin | Co-founder briefings (replies only; posts via direct API) |
 | #quick-wins | 1476950473893482587 | hurin | Revenue-impacting PR notifications |
-| #ops | 1478507314427334950 | (direct API) | Team lead synthesis + recommendations (not bound to hurin) |
+| #team-lead | 1478507314427334950 | (direct API) | Team lead synthesis + recommendations |
 
 beren/tuor Discord accounts archived. #beren-work and #tuor-work channels no longer bound.
 

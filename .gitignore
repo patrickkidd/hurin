@@ -56,13 +56,21 @@ team-lead/daemon.log
 team-lead/daemon-stderr.log
 team-lead/daemon-stdout.log
 team-lead/dedup-cache.json
+team-lead/manual-run.log
+team-lead/github-poll.log
+team-lead/synthesis.log
 
 # === Co-founder runtime (ephemeral) ===
 co-founder/cron.log
 co-founder/sessions/
 
+# === Chief of Staff runtime (ephemeral) ===
+chief-of-staff/cron.log
+chief-of-staff/digests/last-session.json
+
 # === Workspace personal/private artifacts ===
 workspace-hurin/theapp/
+workspace-hurin/familydiagram/
 workspace-hurin/career/
 workspace-hurin/decisions-log.md
 workspace-hurin/memory/
@@ -70,6 +78,13 @@ workspace-hurin/MEMORY.md
 workspace-hurin/*-worktrees/
 workspace-hurin/feedback/
 workspace-hurin/prod.dump
+
+# === Agent workspace runtime ===
+workspace-*/memory/
+workspace-*/.openclaw/
+
+# === QMD caches ===
+agents/*/qmd/
 
 # === Python ===
 .venv/

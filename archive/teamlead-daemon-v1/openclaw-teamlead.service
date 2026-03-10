@@ -1,0 +1,18 @@
+[Unit]
+Description=OpenClaw Team Lead (monitors GitHub, synthesizes hourly, auto-spawns tasks)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/hurin/.openclaw/team-lead
+ExecStart=/home/hurin/.local/bin/uv run --directory /home/hurin/.openclaw/monitor python /home/hurin/.openclaw/team-lead/team-lead.py
+Environment=HOME=/home/hurin
+Environment=PATH=/home/hurin/.npm-global/bin:/home/hurin/.local/bin:/usr/local/bin:/usr/bin:/bin
+StandardOutput=append:/home/hurin/.openclaw/team-lead/daemon-stdout.log
+StandardError=append:/home/hurin/.openclaw/team-lead/daemon-stderr.log
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

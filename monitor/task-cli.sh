@@ -105,7 +105,7 @@ else:
 
 data.setdefault("queue", []).append({
     "task_id": task_id,
-    "repo": f"patrickkidd/{repo}",
+    "repo": repo,
     "description": desc,
     "prompt_file": prompt_file,
     "branch": f"feat/{task_id}",
@@ -214,6 +214,100 @@ for line in sys.stdin:
 '
         ;;
 
+    follow-up)
+        TASK_ID="$1"
+        shift
+
+        # Parse optional flags
+        SESSION_ID=""
+        REPO=""
+        REPLY_CHANNEL=""
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                --session) SESSION_ID="$2"; shift 2 ;;
+                --repo) REPO="$2"; shift 2 ;;
+                --reply-channel) REPLY_CHANNEL="$2"; shift 2 ;;
+                *) break ;;
+            esac
+        done
+        MESSAGE="$*"
+
+        if [[ -z "$TASK_ID" || -z "$MESSAGE" ]]; then
+            echo "Usage: task follow-up <task-id> '<message>' [--session <id>] [--repo <repo>] [--reply-channel <channel-id>]"
+            exit 1
+        fi
+
+        # If no session provided, look up from registry
+        if [[ -z "$SESSION_ID" ]]; then
+            SESSION_ID=$(python3 - "$TASK_ID" <<'PYEOF'
+import json, sys
+from pathlib import Path
+tid = sys.argv[1]
+reg = Path.home() / ".openclaw/workspace-hurin/theapp/.clawdbot/active-tasks.json"
+if not reg.exists():
+    sys.exit(1)
+data = json.load(open(reg))
+task = next((t for t in data.get("tasks", []) if t["id"] == tid), None)
+if not task or not task.get("session_id"):
+    sys.exit(1)
+print(task["session_id"])
+PYEOF
+            )
+            if [[ -z "$SESSION_ID" ]]; then
+                echo "❌ No session found for \`$TASK_ID\`. Task may not exist or has no saved session."
+                exit 1
+            fi
+        fi
+
+        # Look up repo from registry if not provided
+        if [[ -z "$REPO" ]]; then
+            REPO=$(python3 - "$TASK_ID" <<'PYEOF'
+import json, sys
+from pathlib import Path
+tid = sys.argv[1]
+reg = Path.home() / ".openclaw/workspace-hurin/theapp/.clawdbot/active-tasks.json"
+if reg.exists():
+    data = json.load(open(reg))
+    task = next((t for t in data.get("tasks", []) if t["id"] == tid), None)
+    if task and task.get("repo"):
+        print(task["repo"])
+        sys.exit(0)
+print("theapp")
+PYEOF
+            )
+        fi
+
+        # Enqueue follow-up
+        python3 - "$REPO" "$TASK_ID" "$MESSAGE" "$SESSION_ID" "$REPLY_CHANNEL" <<'PYEOF'
+import json, sys, time
+from pathlib import Path
+
+repo, task_id, message, session_id, reply_channel = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
+queue_file = Path.home() / ".openclaw/monitor/task-queue.json"
+
+if queue_file.exists():
+    data = json.load(open(queue_file))
+else:
+    data = {"queue": []}
+
+entry = {
+    "task_id": task_id,
+    "repo": repo,
+    "description": f"Follow-up on {task_id}",
+    "follow_up_prompt": message,
+    "session_id": session_id,
+    "branch": f"feat/{task_id}",
+    "queued_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+}
+if reply_channel:
+    entry["reply_channel_id"] = reply_channel
+
+data.setdefault("queue", []).insert(0, entry)
+queue_file.write_text(json.dumps(data, indent=2))
+print(f"✅ Follow-up for `{task_id}` queued. Daemon picks up within 30s.")
+PYEOF
+        ;;
+
     *)
         echo "**Task CLI commands:**"
         echo "  \`/task list\` — Show all tasks"
@@ -221,5 +315,6 @@ for line in sys.stdin:
         echo "  \`/task status [id]\` — Show task status"
         echo "  \`/task kill <id>\` — Kill a running task"
         echo "  \`/task watch <id>\` — Show recent log output"
+        echo "  \`/task follow-up <id> '<msg>'\` — Resume a task session"
         ;;
 esac

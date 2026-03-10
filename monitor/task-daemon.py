@@ -51,6 +51,7 @@ from discord_relay import (
     post_to_channel_thread,
     DISCORD_TASKS_CHANNEL_ID,
     DISCORD_QUICKWINS_CHANNEL_ID,
+    DISCORD_GUILD_ID,
 )
 from trust_ledger import (
     record_proposal, record_outcome, get_summary as trust_summary,
@@ -151,6 +152,35 @@ def ping_hurin(msg):
 
 
 # _discord_api and DiscordThreadRelay imported from discord_relay module
+
+
+def _post_reply_to_channel(channel_id, task_id, result_text, thread_id=None):
+    """Post a follow-up result back to the originating Discord channel.
+
+    Used by skill follow-ups (cos, cofounder, teamlead) so the response
+    appears in the channel where the user asked, not just in #tasks.
+    """
+    # Build a concise reply with link to full thread
+    thread_link = f"https://discord.com/channels/{DISCORD_GUILD_ID}/{thread_id}" if thread_id else ""
+
+    # Truncate result for channel post (keep it readable)
+    max_len = 1800
+    text = result_text.strip()
+    if len(text) > max_len:
+        text = text[:max_len] + "\n\n*(truncated — see full response in thread)*"
+
+    header = f"**Follow-up result** (`{task_id}`)"
+    if thread_link:
+        header += f" · [full thread]({thread_link})"
+
+    content = f"{header}\n\n{text}"
+
+    discord_api(
+        "POST",
+        f"https://discord.com/api/v10/channels/{channel_id}/messages",
+        {"content": content[:2000]},
+    )
+    log.info(f"  Reply posted to channel {channel_id} for {task_id}")
 
 
 # ---------------------------------------------------------------------------
@@ -552,6 +582,7 @@ async def run_task(entry, is_respawn=False, respawn_context=""):
     branch = entry.get("branch", f"feat/{task_id}")
     session_id_to_resume = entry.get("session_id")  # For follow-ups/respawns
     existing_worktree = entry.get("worktree")  # For respawns
+    reply_channel_id = entry.get("reply_channel_id")  # For channel-targeted replies
 
     log.info(f"{'RESPAWN' if is_respawn else 'STARTING'} task: {task_id} ({repo})")
 
@@ -854,6 +885,11 @@ async def run_task(entry, is_respawn=False, respawn_context=""):
     # Store session_id for future resume/follow-up
     if session_id:
         task_entry["session_id"] = session_id
+
+    # --- Reply to originating channel (for skill follow-ups) ---
+    if reply_channel_id and result_text and not is_error:
+        _post_reply_to_channel(reply_channel_id, task_id, result_text,
+                               discord_relay.thread_id)
 
     if killed:
         task_entry["status"] = "killed"

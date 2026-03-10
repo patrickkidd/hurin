@@ -20,7 +20,7 @@ All three repos are checked out as submodules under `workspace-hurin/theapp/`.
 
 ## Architecture Overview
 
-A 2-tier agent architecture where a cheap, fast router delegates all code intelligence to Claude Code (Opus 4.6) running at $0 on the Anthropic Max plan.
+A 2-tier, 3-agent architecture where specialist agents (MiniMax M2.5) delegate all code intelligence to Claude Code (Opus 4.6) running at $0 on the Anthropic Max plan. See [ADR-0008](adrs/ADR-0008-three-agent-architecture.md).
 
 ```
 Patrick (Discord)
@@ -28,26 +28,25 @@ Patrick (Discord)
   v
 OpenClaw Gateway (systemd service, port 18789)
   |
-  v
-hurin (MiniMax M2.5, ~$0.01/message)
-  |--- Handle directly: read-only queries, system admin, monitoring
-  |--- Delegate to CC: anything touching application code
+  +--> Huor (Team Lead, #team-lead + #tasks)
+  |      |--- Task execution: cc-query.py (sync), task spawn (background)
+  |      |--- GitHub monitoring: cron every 15min (github-poll.py)
+  |      |--- Weekly synthesis: cron Monday 9:15 AM (run-synthesis.py)
+  |      └--- Anomaly detection, auto-spawn pipeline
   |
-  +-- Mode 1: Sync (cc-query.py)
-  |     Agent SDK query() -> blocks -> reply in Discord
-  |     Real-time progress streamed to #tasks thread
+  +--> Tuor (Co-Founder, #co-founder)
+  |      |--- 9 lens strategic briefings (co-founder-sdk.py)
+  |      |--- Action pipeline: approve, refine, propose
+  |      └--- KB-aware analysis, writes findings to knowledge/
   |
-  +-- Mode 2: Background (task spawn -> task-daemon.py)
-  |     Agent SDK query() -> worktree -> PR
-  |     Discord thread streaming, auto-retry on failure
-  |
-  +-- Co-Founder System (cron, 9 lenses)
-  |     claude -p -> strategic briefings -> #co-founder channel
-  |
-  +-- Team Lead Daemon (systemd service)
-        Monitors GitHub + task events -> metrics -> synthesis
-        Auto-spawns automatable tasks toward MVP goals
+  +--> Beren (Chief of Staff, #chief-of-staff)
+         |--- Strategic digests (Tue + Fri, chief-of-staff.py)
+         └--- Meta-orchestration, system evaluation
+
+All agents: MiniMax M2.5 (~$0.01/msg) → Claude Code Opus 4.6 ($0)
 ```
+
+**Húrin** is the platform (Linux VPS, repo, user account), not an agent.
 
 ### Why 2-Tier?
 
@@ -57,36 +56,38 @@ An earlier 3-tier design (hurin -> beren/tuor coordinators -> Claude Code) had a
 
 | Component | Model | Cost |
 |-----------|-------|------|
-| hurin (router) | MiniMax M2.5 | ~$0.01/message ($3-27/month) |
+| Huor/Tuor/Beren (agents) | MiniMax M2.5 | ~$0.01/message ($3-27/month total) |
 | Claude Code (brain) | Opus 4.6 | $0 (Max plan CLI) |
 | Co-founder briefings | Opus 4.6 | $0 (Max plan CLI) |
 | Team lead synthesis | Opus 4.6 | $0 (Max plan CLI) |
 | PR reviews | Opus 4.6 | $0 (Max plan CLI) |
 
-All intelligence work is $0. The only API cost is hurin's routing decisions on MiniMax M2.5.
+All intelligence work is $0. The only API cost is agent routing on MiniMax M2.5.
 
 ---
 
 ## Runtime Components
 
-Three Systemd Services and two cron jobs form the runtime:
+Two systemd services and five cron jobs form the runtime:
 
 ### Systemd Services
 
 | Label | Script | Role |
 |-------|--------|------|
-| `openclaw-gateway` | `openclaw gateway` | OpenClaw proxy on port 18789 (loopback) |
+| `openclaw-gateway` | `openclaw gateway` | OpenClaw proxy on port 18789 (loopback), runs 3 Discord bots |
 | `openclaw-taskdaemon` | `monitor/task-daemon.py` | Drains task queue, executes CC tasks via Agent SDK |
-| `openclaw-teamlead` | `team-lead/team-lead.py` | Monitors GitHub, computes metrics, synthesizes weekly, auto-spawns tasks |
 
-Restart any with: `systemctl --user restart openclaw-<name>`
+Restart: `systemctl --user restart openclaw-<name>`
 
 ### Cron
 
 | Schedule | Script | Purpose |
 |----------|--------|---------|
-| Every 15 min | `monitor/review-prs.sh` | Automated Claude code review on new PRs |
-| 9 rotating schedules | `co-founder/co-founder.sh <lens>` | Strategic briefings (currently paused) |
+| `*/15 7-21 * * *` | `team-lead/github-poll.sh` | GitHub poll, metrics, anomaly detection, telemetry |
+| `15 9 * * 1` | `team-lead/manual-synthesis.sh` | Weekly synthesis (Opus), Discord post, auto-spawn |
+| `3 9 * * 2,5` | `chief-of-staff/chief-of-staff.py` | Strategic digest (Tue + Fri) |
+| `30 9 * * 1` | `monitor/board-reconcile.py` | GitHub project board reconciliation |
+| 9 rotating | `co-founder/co-founder.sh <lens>` | Strategic briefings (currently paused) |
 
 ---
 
@@ -94,16 +95,16 @@ Restart any with: `systemctl --user restart openclaw-<name>`
 
 ### The Workflow: Message to Merged PR
 
-1. Patrick posts a task in Discord `#planning`
-2. hurin triages: handle directly (simple query) or delegate to CC
-3. For investigations: hurin calls `cc-query.py` (Mode 1 — sync), which creates a Discord thread in `#tasks` showing CC's progress in real time
-4. CC investigates, hurin relays the report to Patrick
-5. On approval, hurin runs `task spawn` (Mode 2 — background)
+1. Patrick posts a task in Discord `#team-lead`
+2. Huor triages: handle directly (simple query) or delegate to CC
+3. For investigations: Huor calls `cc-query.py` (Mode 1 — sync), which creates a Discord thread in `#tasks` showing CC's progress in real time
+4. CC investigates, Huor relays the report to Patrick
+5. On approval, Huor runs `task spawn` (Mode 2 — background)
 6. Task daemon picks up within 30 seconds, creates a git worktree, symlinks `.venv`, runs Agent SDK `query()`
 7. Discord thread streams tool calls and text in real time
 8. CC reads the repo's `CLAUDE.md` files, implements the change, creates a PR
 9. `review-prs.sh` (every 15 min) posts an automated Claude review on the PR
-10. On success: daemon pings with PR URL, posts to `#quick-wins` if revenue-impacting
+10. On success: daemon pings with PR URL
 11. On failure: Ralph Loop auto-respawns with session resume (up to 3x)
 12. Patrick reviews and merges
 
@@ -144,24 +145,40 @@ task follow-up <id> <message>                  # Resume completed task's session
 
 ---
 
-## Hurin: The Router
+## Agents
 
-hurin is a smart router with light operational capability. It runs on MiniMax M2.5 (Sonnet-tier) with a restricted tool set.
+Three specialist agents, each with their own Discord bot, workspace, and scoped responsibilities. All run on MiniMax M2.5 (Sonnet-tier) with the same tool lockdown.
 
 ### Structural Enforcement
 
-hurin's tool allowlist is limited to:
+All agents' tool allowlist is limited to:
 - `exec` — run shell commands
-- `sessions_list`, `sessions_history`, `session_status` — read-only session introspection
+- `sessions_list`, `sessions_history`, `session_status`, `sessions_send` — session introspection + agent-to-agent
 
-The `read`, `write`, and `edit` tools are **removed at the OpenClaw config level**. This is structural enforcement, not a prompt-level suggestion — if MiniMax tries to read or write files, the tool call is rejected by the gateway. See [ADR-0003](adrs/ADR-0003-hurin-lockdown-validation.md) for the incident that motivated this.
+The `read`, `write`, and `edit` tools are **removed at the OpenClaw config level**. See [ADR-0003](adrs/ADR-0003-hurin-lockdown-validation.md).
 
-### Triage Rule
+### Huor (Team Lead)
 
-For every message, hurin asks: *"Can I answer this with `exec` commands I already know, without needing to understand application code?"*
-- **Yes** → handle directly (git status, task list, log checks, config edits)
+Primary agent. Channels: `#team-lead`, `#tasks`. Workspace: `workspace-huor/`.
+
+Triage rule: *"Can I answer this with `exec` commands I already know, without needing to understand application code?"*
+- **Yes** → handle directly
 - **No** → delegate to CC via `cc-query.py` or `task spawn`
 - **Not sure** → delegate to CC (cost is $0)
+
+Owns: task execution, GitHub monitoring (cron), weekly synthesis (cron), anomaly detection, project board management.
+
+### Tuor (Co-Founder)
+
+Channel: `#co-founder`. Workspace: `workspace-tuor/`.
+
+Owns: 9-lens strategic briefings, product vision, market research, KB-aware analysis, action pipeline.
+
+### Beren (Chief of Staff)
+
+Channel: `#chief-of-staff`. Workspace: `workspace-beren/`.
+
+Owns: strategic digests (Tue + Fri), meta-orchestration, system evaluation, recommendations.
 
 ### Config Tuning (2GB RAM VPS)
 
@@ -175,7 +192,7 @@ For every message, hurin asks: *"Can I answer this with `exec` commands I alread
 ```
 
 - `maxConcurrent: 2` — prevents swap thrashing on 2GB VPS
-- `thinkingDefault: "off"` — hurin doesn't need reasoning, saves tokens
+- `thinkingDefault: "off"` — agents don't need reasoning, saves tokens
 - Idle session reset at 15 minutes bounds context growth costs
 
 ---
@@ -228,19 +245,18 @@ See [ADR-0004](adrs/ADR-0004-co-founder-system.md) and [ADR-0005](adrs/ADR-0005-
 
 ---
 
-## Team Lead Daemon
+## Team Lead System
 
-A management layer that sits between strategy (co-founder briefings) and execution (task daemon), providing metrics, synthesis, and proactive task spawning.
+A management layer that sits between strategy (co-founder briefings) and execution (task daemon), providing metrics, synthesis, and proactive task spawning. Runs as two cron jobs (replaced the `openclaw-teamlead.service` daemon — see [ADR-0008](adrs/ADR-0008-three-agent-architecture.md)).
 
 ### What It Does
 
-- **Watches task events** — reacts to completions, failures, PR merges within seconds
-- **Polls GitHub** — PRs, CI, issues, Project #4 state every 15 min (business hours only)
+- **Polls GitHub** (cron, every 15min 7AM-10PM) — PRs, CI, issues, Project #4 state
 - **Computes metrics** — fuzzy goal completion %, velocity, cycle time, success rate
 - **Detects anomalies** — stale PRs, broken CI, stuck tasks, goal regression, velocity stalls
-- **Synthesizes weekly** — Agent SDK `query()` with Opus 4.6, 10-turn budget (Monday 9 AM AKST)
-- **Auto-spawns tasks** — 100% automatable tasks that map to MVP goals (Tier 1)
-- **Morning brief** — first synthesis after 7AM summarizes overnight events
+- **Synthesizes weekly** (cron, Monday 9:15 AM) — Agent SDK `query()` with Opus 4.6, 10-turn budget
+- **Auto-spawns tasks** — 100% automatable tasks that map to MVP goals (via spawn policy engine)
+- **On-demand** via `/teamlead` skill
 
 ### Fuzzy Goal Completion
 
@@ -273,7 +289,7 @@ Currently running at Tier 1 with spawn policy engine governing per-category auto
 - **Decomposition suggestions** — suggests breaking down stale large tasks into CC-friendly subtasks
 - **Quick win mining** — scans open issues, TODOs, and briefings for small automatable improvements
 
-See [ADR-0006](adrs/ADR-0006-team-lead-daemon.md).
+See [ADR-0006](adrs/ADR-0006-team-lead-daemon.md) (superseded by [ADR-0008](adrs/ADR-0008-three-agent-architecture.md)).
 
 ---
 
@@ -338,14 +354,14 @@ See [ADR-0002](adrs/ADR-0002-prompt-caching.md).
 
 ## Discord Channels
 
-| Channel | Purpose |
-|---------|---------|
-| `#planning` | Primary conversation with Patrick |
-| `#tasks` | Task threads — daemon + cc-query stream progress, thread replies steer/resume tasks |
-| `#reviews` | PR review notifications |
-| `#co-founder` | Strategic briefings from the co-founder system |
-| `#quick-wins` | Revenue-impacting PR notifications |
-| `#ops` | Team lead synthesis + recommendations |
+| Channel | Agent | Purpose |
+|---------|-------|---------|
+| `#team-lead` | Huor | Primary planning, task execution, synthesis, anomaly alerts |
+| `#tasks` | Huor | Task threads — daemon + cc-query stream progress, thread replies steer/resume tasks |
+| `#co-founder` | Tuor | Strategic briefings from the co-founder system |
+| `#chief-of-staff` | Beren | Strategic digests, system evaluation |
+
+Dropped channels: `#planning` (merged into `#team-lead`), `#quick-wins` (paused), `#reviews` (unused).
 
 ---
 
@@ -407,21 +423,32 @@ See [ADR-0002](adrs/ADR-0002-prompt-caching.md).
     task/                             # /task skill
     teamlead/                         # /teamlead skill
     trust/                            # /trust skill
-  team-lead/                          # Team lead daemon
-    team-lead.py                      # Main daemon (async Python, Agent SDK)
+  team-lead/                          # Team lead system (cron, not daemon)
+    team_lead.py                      # Library module (importable functions)
     config.py                         # Thresholds, quiet hours, autonomy tier
+    github-poll.py                    # Cron entry: GitHub poll + anomaly detection
+    github-poll.sh                    # Shell wrapper for cron
+    run-synthesis.py                  # Cron entry: weekly synthesis + auto-spawn
+    manual-synthesis.sh               # Shell wrapper for /teamlead skill + cron
+    anomaly-cooldowns.json            # Persisted anomaly cooldown state
     syntheses/                        # Saved synthesis outputs (encrypted)
-  workspace-hurin/                    # hurin's workspace
-    SOUL.md                           # Router role, triage rules, delegation protocol
-    TOOLS.md                          # Local environment, commands, monitoring
-    IDENTITY.md                       # Name, creature, vibe, emoji
-    USER.md                           # Patrick's info
-    scripts/                          # Operational scripts
+  agents/                             # Per-agent OpenClaw configs
+    huor/agent/models.json            # MiniMax model definitions
+    tuor/agent/models.json
+    beren/agent/models.json
+  workspace-hurin/                     # Platform workspace (code checkouts)
     theapp/                           # Monorepo (gitignored, checked out separately)
       .clawdbot/active-tasks.json     # Task registry
+      btcopilot/, familydiagram/, fdserver/
+  workspace-huor/                     # Huor (Team Lead) agent workspace
+    SOUL.md, AGENTS.md, USER.md, TOOLS.md, IDENTITY.md, HEARTBEAT.md
+    PROJECT-BOARD-RULES.md
+  workspace-tuor/                     # Tuor (Co-Founder) agent workspace
+    SOUL.md, AGENTS.md, USER.md, TOOLS.md, IDENTITY.md
+  workspace-beren/                    # Beren (Chief of Staff) agent workspace
+    SOUL.md, AGENTS.md, USER.md, TOOLS.md, IDENTITY.md
   workspace/                          # OpenClaw default workspace (templates)
-  systemd/                            # Service unit file backups
-  archive/                            # Archived beren/tuor configs, monitor-v1
+  archive/                            # Archived configs: teamlead-daemon-v1, agents-beren/tuor, monitor-v1
 ```
 
 ---
@@ -431,7 +458,7 @@ See [ADR-0002](adrs/ADR-0002-prompt-caching.md).
 Each background task gets its own git worktree for isolation:
 - **Default:** symlink `.venv` from the main repo (0 bytes, instant)
 - **Dependency changes:** `uv sync` (fast via uv's hardlink cache)
-- **Capacity:** 3-4 concurrent worktrees fit comfortably on 16GB
+- **Capacity:** 2 concurrent worktrees fit on 2GB VPS (maxConcurrent: 2)
 - **Cleanup:** automatic after PR creation
 
 ---
@@ -456,7 +483,7 @@ Sub-issues model dependencies within a milestone. Priority (P0-P3) encodes execu
 
 ```bash
 openclaw doctor
-openclaw agents list              # Should show only hurin
+openclaw agents list              # Should show huor, tuor, beren
 openclaw channels status --probe  # Live Discord connectivity
 ```
 
@@ -465,7 +492,7 @@ openclaw channels status --probe  # Live Discord connectivity
 ```bash
 openclaw gateway restart
 systemctl --user restart openclaw-taskdaemon
-systemctl --user restart openclaw-teamlead
+# Team lead runs via cron, no service to restart
 ```
 
 ### Monitor Tasks
@@ -496,14 +523,15 @@ tail ~/.openclaw/logs/cache-trace.jsonl    # Prompt cache health
 | [ADR-0003](adrs/ADR-0003-hurin-lockdown-validation.md) | Accepted | Hurin tool lockdown after autonomous action incident |
 | [ADR-0004](adrs/ADR-0004-co-founder-system.md) | Accepted | Co-founder strategic briefing system (9 lenses, journal memory) |
 | [ADR-0005](adrs/ADR-0005-action-system.md) | Accepted | Quality-gated action pipeline with approval flow |
-| [ADR-0006](adrs/ADR-0006-team-lead-daemon.md) | Accepted | Team lead daemon: metrics, synthesis, auto-spawning |
+| [ADR-0006](adrs/ADR-0006-team-lead-daemon.md) | Superseded | Team lead daemon: metrics, synthesis, auto-spawning (daemon replaced by cron in ADR-0008) |
 | [ADR-0007](adrs/ADR-0007-self-evolving-system.md) | Accepted | Self-evolving system: KB, telemetry, spawn policy, learning loops |
+| [ADR-0008](adrs/ADR-0008-three-agent-architecture.md) | Accepted | Three-agent architecture (Huor/Tuor/Beren) + daemon decomposition |
 
 ---
 
 ## Security Notes
 
-- **Secrets** live in `secrets.json` (gitignored). Keys: `anthropic-api-key`, `minimax-api-key`, `discord-bot-token`.
+- **Secrets** live in `secrets.json` (gitignored). Keys: `anthropic-api-key`, `minimax-api-key`, `discord-bot-token`, `huor-discord-bot-token`, `tuor-discord-bot-token`, `beren-discord-bot-token`.
 - **Bot account:** `patrickkidd-hurin` (GitHub PAT in `monitor/hurin-bot-token`, also gitignored).
 - **Sandbox mode:** off (trusted local machine).
 - **`bypassPermissions`** on Agent SDK calls — appropriate for local execution.

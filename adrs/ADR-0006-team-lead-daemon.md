@@ -1,6 +1,6 @@
 # ADR-0006: Team Lead Management Daemon
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0008: Three-Agent Architecture](ADR-0008-three-agent-architecture.md) (daemon replaced by cron jobs; metrics/synthesis logic retained in `team_lead.py` library)
 
 **Date:** 2026-03-03
 
@@ -42,7 +42,7 @@ GitHub (PRs, CI, Issues, Project #4) ──polls every 15min──────�
                               │
                     ┌─────────┴──────────┐
                     ▼                    ▼
-              Discord #ops     Task Queue
+              Discord #team-lead     Task Queue
               (recommendations)     (auto-spawned)
                                          │
                                     ┌────┘
@@ -94,7 +94,7 @@ Goal completion = weighted average across all milestone issues.
 - Only tasks where `Auto: CC` (no human judgment needed)
 - Must map to an existing MVP goal (has a milestone)
 - Creates GH issue first (source of truth), then spawns
-- Posts to Discord #ops with issue link before spawning
+- Posts to Discord #team-lead with issue link before spawning
 - Concurrent spawn limit: max 2 team-lead-originated tasks at once
 
 ### Proactive Velocity Features
@@ -161,7 +161,7 @@ Uses `claude-agent-sdk` `query()` with Sonnet 4.6 (`claude-sonnet-4-6`) and a 3-
 3. **Turn 3:** Produce structured JSON: `goal_status[]`, `recommendations[]`, `auto_spawn_candidates[]`, `health_summary`
 
 Auto-spawn candidates that pass guard rails are immediately executed.
-Recommendations for human tasks are posted to Discord #ops.
+Recommendations for human tasks are posted to Discord #team-lead.
 Both are deduplicated against a 24h cache.
 
 ### Auto-Spawn Flow
@@ -171,7 +171,7 @@ When the team lead identifies a 100% automatable task:
 1. **Create GitHub Issue** — title, description, milestone (goal), labels
 2. **Add to Project #4** — set Goal, Status=In Progress, Owner=Hurin, Priority
 3. **Enqueue to task-daemon** — write to `task-queue.json` with issue number linked
-4. **Post to Discord #ops** — "Spawned T-XX: [description] (Issue #NNN, Goal 1)"
+4. **Post to Discord #team-lead** — "Spawned T-XX: [description] (Issue #NNN, Goal 1)"
 5. **Track in Discord thread** — task daemon's existing Discord relay handles progress updates
 
 ## File Layout
@@ -200,7 +200,7 @@ Shares `~/.openclaw/monitor/.venv`. No new dependencies beyond what the task dae
 1. **GitHub setup** — Create milestones for 3 goals. Add `Goal` field to Project #4. Tag existing issues with milestones + Goal field. Add effort labels.
 2. **Data layer** — GitHub reader (milestones, project items, PRs, CI). Registry reader. Event file watcher for `task-events.jsonl`.
 3. **Metrics engine** — Fuzzy completion %, velocity, anomaly detection, JSONL logging.
-4. **Synthesis engine** — Agent SDK `query()` with Sonnet 4.6. Prompt design. Dedup. Discord posting to #ops.
+4. **Synthesis engine** — Agent SDK `query()` with Sonnet 4.6. Prompt design. Dedup. Discord posting to #team-lead.
 5. **Auto-spawn pipeline** — GH issue creation, project sync, task-queue enqueue, Discord thread linking.
 6. **LaunchAgent + morning brief** — plist, business hours gating, morning brief, lens prompt rewrite for project-pulse specialization.
 
