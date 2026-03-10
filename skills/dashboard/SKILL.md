@@ -79,3 +79,72 @@ Output EXACTLY this structure. Skip empty sections. **UNDER 12 LINES TOTAL.**
 - Do NOT list PR details, CI status, queue depth, task registry, or agent plumbing.
 - Do NOT exceed 12 lines. If you're over, cut the least important content.
 - Speak like a dashboard, not a report. No prose. No explanations.
+
+---
+
+## /dashboard ci — Collective Intelligence Dashboard
+
+**If the first argument is "ci"** (e.g., `/dashboard ci`):
+
+Show the CI system health. Run this exec command:
+
+```bash
+cd /home/hurin/.openclaw/monitor && python3 -c "
+import json, sys
+sys.path.insert(0, '.')
+from shared_memory import (
+    read_state, get_signal_stats, get_episode_stats,
+    read_recent_calibrations, get_calibration_accuracy,
+    read_signals, read_recent_episodes,
+)
+
+state = read_state()
+sig = get_signal_stats()
+ep = get_episode_stats()
+cals = read_recent_calibrations(5)
+beren_acc = get_calibration_accuracy('beren')
+
+# Recent unconsumed signals (peek, don't mark consumed)
+pending = read_signals('all', mark_consumed=False)
+unconsumed = [s for s in pending if not s.get('consumed')]
+
+print('STATE|' + json.dumps(state))
+print('SIGNALS|' + json.dumps(sig))
+print('EPISODES|' + json.dumps(ep))
+print('CALS|' + json.dumps(cals))
+print('BEREN_ACC|' + json.dumps(beren_acc))
+print('UNCONSUMED|' + str(len(unconsumed)))
+print('RECENT_SIGNALS|' + json.dumps([{'from': s['from'], 'to': s['to'], 'type': s['type'], 'signal': s['signal'][:80]} for s in pending[-5:]]))
+print('RECENT_EPISODES|' + json.dumps([{'task_id': e['task_id'], 'outcome': e['outcome'], 'lessons': e.get('lessons',[])[0] if e.get('lessons') else ''} for e in read_recent_episodes(3)]))
+"
+```
+
+Format the output EXACTLY like this. **UNDER 20 LINES TOTAL.**
+
+```
+🧬 **Collective Intelligence**
+
+🎯 **Sprint Focus:** <from state.sprint_focus>
+   Patrick last said: "<from state.patrick_last_said>"
+
+📡 **Signal Bus:** <total> signals | <consumed>/<total> consumed (<rate>%) | <unconsumed> pending
+   Recent: <last 2-3 signals, one line each: "[type] from→to: signal text">
+
+🧠 **Episodic Memory:** <total> episodes | <by_outcome breakdown> | avg <duration>h
+   Lessons captured: <total_lessons> | Signal-influenced: <with_signals>
+
+⚔️ **Adversarial Health:**
+   Calibrations: <total> | Beren accuracy: <correct>/<total> (<rate>%)
+   <last calibration topic + outcome, if any>
+
+🔗 **Cross-Pollination:** <signals by flow, e.g. "huor→tuor: 5, tuor→huor: 3, beren→tuor: 2">
+
+🌐 Full dashboard: ssh -L 8787:localhost:8787 hurin → http://localhost:8787
+```
+
+### Rules for /dashboard ci
+- Do NOT route to CC. Just exec + read + format.
+- If signal bus is empty, say "No signals yet — system bootstrapping."
+- If episodes are empty, say "No episodes yet — waiting for first task completion."
+- Show the SSH tunnel link at the bottom for the full visual dashboard.
+- Do NOT exceed 20 lines.

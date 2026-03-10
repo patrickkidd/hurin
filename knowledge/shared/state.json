@@ -1,0 +1,10 @@
+{
+  "last_updated": "2026-03-10T18:00:00Z",
+  "updated_by": "patrick",
+  "sprint_focus": "btcopilot auth layer + fd issue backlog",
+  "active_decisions": [],
+  "blocked_on": [],
+  "patrick_last_said": "Focus on btcopilot MVP. Don't touch fdserver architecture yet.",
+  "do_not_touch": ["fdserver auth architecture until decision resolved"],
+  "current_week_theme": "Unblock btcopilot personal app MVP"
+}

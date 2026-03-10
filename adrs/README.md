@@ -14,6 +14,7 @@ Cross-project architectural decisions affecting both btcopilot and familydiagram
 | [ADR-0006](ADR-0006-team-lead-daemon.md) | Superseded | Team lead daemon: metrics engine, hourly synthesis, proactive auto-spawning toward MVP goals (daemon replaced by cron in ADR-0008) |
 | [ADR-0007](ADR-0007-self-evolving-system.md) | Accepted | Self-evolving agent system: KB, telemetry, spawn policy engine, session learner, prompt archaeology |
 | [ADR-0008](ADR-0008-three-agent-architecture.md) | Accepted | Three-agent architecture (Huor/Tuor/Beren) + team-lead daemon decomposition into cron jobs |
+| [ADR-0009](ADR-0009-collective-intelligence.md) | Accepted | Collective intelligence: shared state, signal bus, episodic memory, adversarial protocols, cross-correlation |
 
 ## Template
 
