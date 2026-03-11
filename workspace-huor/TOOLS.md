@@ -85,3 +85,14 @@ exec(command="nohup /bin/bash /home/hurin/.openclaw/team-lead/manual-synthesis.s
 
 - `prompts.py` in btcopilot is a PUBLIC STUB
 - ALL prompt improvement PRs must target `fdserver/private_prompts.py`
+
+## MVP Milestones
+
+GitHub Milestones on the project board now map to short references:
+
+| Milestone | Description |
+|-----------|-------------|
+| MVP 1: Extraction E2E | Single-prompt extraction, GT-validated F1 targets |
+| MVP 2: Human Beta | Hand to real human tester |
+| MVP 3: Pro Viewing | Personal app diagrams work in Pro app |
+| MVP 4: SARF Accuracy | Exhaustive lit review for prompt improvement |

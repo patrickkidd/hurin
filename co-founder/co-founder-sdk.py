@@ -427,6 +427,41 @@ async def run_lens(lens_name):
     # 2c. Load relevant KB entries for this lens
     kb_context = _load_kb_context(lens_name)
 
+    # Generate a session key for this briefing run (for impact tracking)
+    import uuid
+    session_key = str(uuid.uuid4())
+
+    # 2c-2. Signal Consumption: Read signals addressed to Tuor
+    try:
+        sys.path.insert(0, str(HOME / ".openclaw/monitor"))
+        from shared_memory import read_signals
+        tuor_signals = read_signals("tuor", max_age_days=14, mark_consumed=True, session_key=session_key)
+        if tuor_signals:
+            signal_summary = "\n".join([
+                f"  - [{s['type']}] from {s['from']}: {s['signal'][:100]}..."
+                for s in tuor_signals[:5]
+            ])
+            log.info(f"Consumed {len(tuor_signals)} signals from Beren")
+        else:
+            signal_summary = "  (no signals)"
+    except Exception as e:
+        log.warning(f"Signal consumption failed: {e}")
+        signal_summary = "  (signal read failed)"
+
+    # 2d-2. Signal Emission: Emit signals to other agents
+    try:
+        sys.path.insert(0, str(HOME / ".openclaw/monitor"))
+        from shared_memory import append_signal
+        tuor_can_signal = True
+        def emit_to_agent(agent, signal_type, message, confidence=0.7):
+            """Emit a signal from Tuor to another agent."""
+            append_signal("tuor", agent, signal_type, message, confidence=confidence, source_artifact="tuor-briefing")
+    except Exception as e:
+        log.warning(f"Signal emission setup failed: {e}")
+        tuor_can_signal = False
+        def emit_to_agent(*args, **kwargs):
+            pass
+
     # 2d. Collective Intelligence: Cross-agent context
     try:
         sys.path.insert(0, str(HOME / ".openclaw/monitor"))
@@ -439,7 +474,10 @@ async def run_lens(lens_name):
         ci_signal_prompt = ""
 
     # 3. Assemble full prompt (same structure as co-founder.sh)
-    prompt = f"""{lens_prompt}
+    prompt = f"""## Signals from Other Agents
+{signal_summary}
+
+{lens_prompt}
 
 {ci_cross_context}
 
@@ -618,6 +656,13 @@ Output format:
             log.info(f"CI: Emitted {len(emitted)} cross-agent signals from briefing")
     except Exception as e:
         log.warning(f"CI signal emission failed (non-fatal): {e}")
+
+    # === Signal Influence Tracking ===
+    try:
+        from shared_memory import read_signals_with_influence_check
+        read_signals_with_influence_check("tuor", cc_output, max_age_days=14)
+    except Exception as e:
+        log.warning(f"Signal influence tracking failed (non-fatal): {e}")
 
     # 5. Save session ID for follow-up
     if session_id:

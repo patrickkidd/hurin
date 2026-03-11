@@ -57,12 +57,14 @@ h1 {
 
 /* Grid */
 .grid { display: grid; gap: 20px; margin-bottom: 24px; }
+.grid-5 { grid-template-columns: repeat(5, 1fr); }
 .grid-4 { grid-template-columns: repeat(4, 1fr); }
 .grid-3 { grid-template-columns: repeat(3, 1fr); }
 .grid-2 { grid-template-columns: repeat(2, 1fr); }
 .grid-1 { grid-template-columns: 1fr; }
-@media (max-width: 1200px) { .grid-4 { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 768px) { .grid-4, .grid-3, .grid-2 { grid-template-columns: 1fr; } }
+@media (max-width: 1400px) { .grid-5 { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 1200px) { .grid-5, .grid-4 { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 768px) { .grid-5, .grid-4, .grid-3, .grid-2 { grid-template-columns: 1fr; } }
 
 /* Cards */
 .card {
@@ -245,6 +247,10 @@ tr:hover td { background: var(--bg-card-hover); }
 
 /* Chart containers */
 .chart-container {
+    min-height: 180px;
+}
+
+.chart-container-sm {
     position: relative;
     height: 250px;
     width: 100%;
@@ -278,7 +284,7 @@ tr:hover td { background: var(--bg-card-hover); }
 <body>
 
 <h1>Collective Intelligence Dashboard</h1>
-<div class="subtitle">Húrin Agent System &mdash; <span>Huor</span> &middot; <span>Tuor</span> &middot; <span>Beren</span> &mdash; Generated 2026-03-10 20:56 UTC</div>
+<div class="subtitle">Húrin Agent System &mdash; <span>Huor</span> &middot; <span>Tuor</span> &middot; <span>Beren</span> &mdash; Generated 2026-03-11 00:50 UTC</div>
 
 <!-- Sprint Focus -->
 <div class="sprint-focus">
@@ -287,40 +293,67 @@ tr:hover td { background: var(--bg-card-hover); }
     <div class="sprint-subtext">Patrick: &ldquo;Focus on btcopilot MVP. Don't touch fdserver architecture yet.&rdquo;</div>
 </div>
 
-<!-- KPI Row -->
-<div class="grid grid-4">
-    <div class="card">
-        <div class="card-header">
-            <span class="card-title">Signals Total</span>
-            <span class="card-icon">&#x1F4E1;</span>
-        </div>
-        <div class="kpi-value">3</div>
-        <div class="kpi-detail">2 consumed &middot; 0 influenced decisions</div>
+<!-- CI KPIs: 5-column layout -->
+<div class="grid grid-5">
+    <div class="card" title="Signals successfully received by target agents">
+        <div class="card-header"><span class="card-title">Delivery Rate</span><span class="card-icon">&#x1F4E6;</span></div>
+        <div class="kpi-value kpi-warn">43<span class="kpi-unit">%</span></div>
+        <div class="kpi-detail">% of signals consumed</div>
     </div>
-    <div class="card">
-        <div class="card-header">
-            <span class="card-title">Consumption Rate</span>
-            <span class="card-icon">&#x2705;</span>
-        </div>
-        <div class="kpi-value kpi-warn">66.7<span class="kpi-unit">%</span></div>
-        <div class="kpi-detail">Target: &gt; 80% &mdash; Needs attention</div>
+    <div class="card" title="Average time for agents to act on signals">
+        <div class="card-header"><span class="card-title">Response Latency</span><span class="card-icon">&#x23F1;</span></div>
+        <div class="kpi-value kpi-good">1845<span class="kpi-unit">s</span></div>
+        <div class="kpi-detail">avg seconds to respond</div>
     </div>
-    <div class="card">
-        <div class="card-header">
-            <span class="card-title">Episodes Captured</span>
-            <span class="card-icon">&#x1F4DA;</span>
-        </div>
+    <div class="card" title="How often signals are being sent">
+        <div class="card-header"><span class="card-title">Signal Velocity</span><span class="card-icon">&#x26A1;</span></div>
+        <div class="kpi-value kpi-good">7.0<span class="kpi-unit">/d</span></div>
+        <div class="kpi-detail">signals per day</div>
+    </div>
+    <div class="card" title="Signals that changed agent decisions">
+        <div class="card-header"><span class="card-title">Influence</span><span class="card-icon">&#x1F4A1;</span></div>
+        <div class="kpi-value kpi-good">100<span class="kpi-unit">%</span></div>
+        <div class="kpi-detail">% with action taken</div>
+    </div>
+    <div class="card" title="Learning episodes captured from work">
+        <div class="card-header"><span class="card-title">Episodes</span><span class="card-icon">&#x1F4DA;</span></div>
         <div class="kpi-value">0</div>
-        <div class="kpi-detail">0 lessons extracted &middot; 0 CI-informed</div>
+        <div class="kpi-detail">0 lessons</div>
     </div>
-    <div class="card">
-        <div class="card-header">
-            <span class="card-title">Adversarial Challenges</span>
-            <span class="card-icon">&#x2694;&#xFE0F;</span>
-        </div>
+</div>
+
+<!-- VALUE KPIs: Is CI adding value? -->
+<div class="section-header"><span class="icon">&#x1F4B0;</span> Value KPIs: Is CI Adding Value?</div>
+<div class="grid grid-5">
+    <div class="card" title="% of consumed signals that influenced decisions">
+        <div class="card-header"><span class="card-title">Signal Quality</span><span class="card-icon">&#x2728;</span></div>
+        <div class="kpi-value kpi-good">100<span class="kpi-unit">%</span></div>
+        <div class="kpi-detail">1 consumed signals</div>
+    </div>
+    <div class="card" title="Avg cycle time with signals - avg cycle time without">
+        <div class="card-header"><span class="card-title">Cycle Time Delta</span><span class="card-icon">&#x1F504;</span></div>
+        <div class="kpi-value kpi-warn">+0.0<span class="kpi-unit">h</span></div>
+        <div class="kpi-detail">0.0h with / 0.0h without</div>
+    </div>
+    <div class="card" title="Success rate with signals - success rate without">
+        <div class="card-header"><span class="card-title">Success Delta</span><span class="card-icon">&#x1F3C6;</span></div>
+        <div class="kpi-value kpi-warn">+0.0<span class="kpi-unit">pp</span></div>
+        <div class="kpi-detail">0% with / 0% without</div>
+    </div>
+    <div class="card" title="Episodes where signals were consumed">
+        <div class="card-header"><span class="card-title">Episodes w/Signals</span><span class="card-icon">&#x1F4E7;</span></div>
         <div class="kpi-value">0</div>
-        <div class="kpi-detail">No calibrations yet — resolve disagreements to build data</div>
+        <div class="kpi-detail">0 without</div>
     </div>
+    <div class="card" title="Raw influence tracking from signal_impact.jsonl">
+        <div class="card-header"><span class="card-title">Influence Tracked</span><span class="card-icon">&#x1F4CB;</span></div>
+        <div class="kpi-value">1</div>
+        <div class="kpi-detail">signal_impact entries</div>
+    </div>
+</div>
+<div class="kpi-note">
+    <strong>Note:</strong> Negative cycle delta = signals help tasks complete faster. Positive success delta = signals improve outcomes.
+    Compare episodes with signals consumed vs. without to compute deltas.
 </div>
 
 <!-- Agent Topology -->
@@ -329,7 +362,7 @@ tr:hover td { background: var(--bg-card-hover); }
     <div class="card">
         <div class="card-header"><span class="card-title">Network Topology</span></div>
         <div class="topology-container">
-            <svg viewBox="0 0 600 400" width="560" height="370" xmlns="http://www.w3.org/2000/svg">
+            <svg viewBox="0 0 600 400" width="700" height="450" xmlns="http://www.w3.org/2000/svg">
                 <!-- Definitions -->
                 <defs>
                     <filter id="glow">
@@ -400,7 +433,13 @@ tr:hover td { background: var(--bg-card-hover); }
 
                 <!-- Flow: Beren → Tuor (red-team) -->
                 <path d="M 340 318 Q 470 250 470 124" fill="none" stroke="#a78bfa" stroke-width="2" opacity="0.6" marker-end="url(#arrow-beren)" stroke-dasharray="6,3"/>
-                <text x="465" y="260" text-anchor="end" fill="#a78bfa" font-size="9" opacity="0.7">red-team &#x2694;</text>
+                <text x="465" y="260" text-anchor="end" fill="#a78bfa" font-size="9" opacity="0.7">red-team</text>
+
+                <!-- Flow: Tuor → Huor (red-team) -->
+                <path d="M 406 74 Q 300 20 194 74" fill="none" stroke="#a78bfa" stroke-width="2" opacity="0.5" marker-end="url(#arrow-tuor)" stroke-dasharray="6,3"/>
+                
+                <!-- Flow: Beren → Huor (red-team) -->
+                <path d="M 138 122 Q 100 180 100 165" fill="none" stroke="#a78bfa" stroke-width="1.5" opacity="0.4" marker-end="url(#arrow-huor)" stroke-dasharray="4,2"/>
 
                 <!-- Flow: All → Shared Memory -->
                 <line x1="165" y1="120" x2="220" y2="165" stroke="#2a2e3e" stroke-width="1" stroke-dasharray="3,3" opacity="0.4"/>
@@ -408,8 +447,10 @@ tr:hover td { background: var(--bg-card-hover); }
                 <line x1="300" y1="296" x2="300" y2="245" stroke="#2a2e3e" stroke-width="1" stroke-dasharray="3,3" opacity="0.4"/>
 
                 <!-- Flow counts (dynamic) -->
-                <text x="300" y="16" text-anchor="middle" fill="#8b8fa3" font-size="10">3 signals total</text>
+                <text x="300" y="16" text-anchor="middle" fill="#8b8fa3" font-size="10">7 signals total</text>
             </svg>
+            <!-- Legend -->
+
         </div>
     </div>
     <div class="card">
@@ -425,30 +466,30 @@ tr:hover td { background: var(--bg-card-hover); }
 <div class="grid grid-3">
     <div class="card">
         <div class="card-header"><span class="card-title">Signal Types Distribution</span></div>
-        <div class="chart-container-sm">
+        <div class="chart-container-sm" style="min-height: 160px;">
             <canvas id="typeChart"></canvas>
         </div>
     </div>
     <div class="card">
-        <div class="card-header"><span class="card-title">Influence Rate</span></div>
-        <div class="kpi-value kpi-bad" style="font-size: 48px; text-align: center; padding-top: 30px;">
-            0.0<span class="kpi-unit">%</span>
+        <div class="card-header"><span class="card-title">Agent Activity Balance</span></div>
+        <div class="chart-container">
+            <canvas id="agentActivityChart"></canvas>
         </div>
         <div class="kpi-detail" style="text-align: center; margin-top: 12px;">
-            of consumed signals influenced a decision<br>
-            Target: &gt; 20% &mdash; Signals may be too noisy or low-value
-        </div>
-    </div>
-    <div class="card">
-        <div class="card-header"><span class="card-title">Agent Activity Balance</span></div>
-        <div class="chart-container-sm">
-            <canvas id="agentActivityChart"></canvas>
+            Shows which agents are sending vs receiving signals.<br>
+            <strong>Team Lead (Huor)</strong> should send more than receive.<br>
+            <strong>Co-Founder (Tuor)</strong> signals strategic priorities.<br>
+            <strong>Chief of Staff (Beren)</strong> coordinates corrections.
         </div>
     </div>
 </div>
 
 <!-- Adversarial Health -->
 <div class="section-header"><span class="icon">&#x2694;&#xFE0F;</span> Adversarial Improvement</div>
+<div class="adversarial-note">
+    <strong>Red-team</strong> is when Beren challenges Tuor's recommendations or Huor's priorities — 
+    like a devil's advocate to stress-test decisions before execution. This is <em>productive</em> conflict.
+</div>
 <div class="grid grid-2">
     <div class="card">
         <div class="card-header"><span class="card-title">Challenge Accuracy by Agent</span></div>
@@ -512,6 +553,42 @@ tr:hover td { background: var(--bg-card-hover); }
     <div class="card">
         <div class="card-header"><span class="card-title">Recent Signals</span></div>
         <div class="table-scroll"><table><thead><tr><th>Timestamp</th><th>From</th><th>To</th><th>Type</th><th>Signal</th><th>Conf</th><th>Status</th></tr></thead><tbody>
+        <tr>
+            <td class="mono">2026-03-10T23:08</td>
+            <td><span class="agent agent-huor">huor</span></td>
+            <td><span class="agent agent-tuor">tuor</span></td>
+            <td><span class="signal-type">cross_correlation</span></td>
+            <td class="signal-text">Huor noticed voice input work overlaps with btcopilot transcription. Check for coordination opportunities.</td>
+            <td class="center">0.75</td>
+            <td class="center"><span class="badge badge-gray">pending</span> </td>
+        </tr>
+        <tr>
+            <td class="mono">2026-03-10T23:07</td>
+            <td><span class="agent agent-tuor">tuor</span></td>
+            <td><span class="agent agent-beren">beren</span></td>
+            <td><span class="signal-type">metric</span></td>
+            <td class="signal-text">Testing Tuor→Beren signaling. Briefings now include signal consumption.</td>
+            <td class="center">0.85</td>
+            <td class="center"><span class="badge badge-gray">pending</span> </td>
+        </tr>
+        <tr>
+            <td class="mono">2026-03-10T23:07</td>
+            <td><span class="agent agent-huor">huor</span></td>
+            <td><span class="agent agent-beren">beren</span></td>
+            <td><span class="signal-type">lesson_learned</span></td>
+            <td class="signal-text">Testing bidirectional signaling. Huor can now signal Beren directly.</td>
+            <td class="center">0.90</td>
+            <td class="center"><span class="badge badge-gray">pending</span> </td>
+        </tr>
+        <tr>
+            <td class="mono">2026-03-10T22:54</td>
+            <td><span class="agent agent-beren">beren</span></td>
+            <td><span class="agent agent-huor">huor</span></td>
+            <td><span class="signal-type">priority_shift</span></td>
+            <td class="signal-text">Testing signal emission from CLI</td>
+            <td class="center">0.80</td>
+            <td class="center"><span class="badge badge-green">consumed</span> </td>
+        </tr>
         <tr>
             <td class="mono">2026-03-10T18:34</td>
             <td><span class="agent agent-beren">beren</span></td>
@@ -635,7 +712,7 @@ tr:hover td { background: var(--bg-card-hover); }
         <div style="padding: 10px 0;">
             <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border);">
                 <span style="color: var(--text-dim);">Total Entries</span>
-                <span style="font-weight: 700;">54</span>
+                <span style="font-weight: 700;">55</span>
             </div>
             <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border);">
                 <span style="color: var(--text-dim);">Global Accuracy</span>
@@ -654,7 +731,7 @@ tr:hover td { background: var(--bg-card-hover); }
 </div>
 
 <div class="footer">
-    Collective Intelligence Dashboard v1.0 &mdash; Húrin Agent System &mdash; Generated 2026-03-10 20:56 UTC
+    Collective Intelligence Dashboard v1.0 &mdash; Húrin Agent System &mdash; Generated 2026-03-11 00:50 UTC
 </div>
 
 <script>
@@ -671,7 +748,7 @@ const COLORS = {
 };
 
 // Signal Flow Chart (horizontal bar)
-const flowData = {"beren\u2192huor": 2, "beren\u2192tuor": 1};
+const flowData = {"beren\u2192huor": 3, "beren\u2192tuor": 1, "huor\u2192beren": 1, "tuor\u2192beren": 1, "huor\u2192tuor": 1};
 const flowLabels = Object.keys(flowData);
 const flowValues = Object.values(flowData);
 const flowColors = flowLabels.map(l => {
@@ -696,7 +773,7 @@ if (flowLabels.length > 0) {
 }
 
 // Signal Types (doughnut)
-const typeData = {"cross_correlation": 1, "process_correction": 1, "red_team": 1};
+const typeData = {"cross_correlation": 2, "process_correction": 1, "red_team": 1, "priority_shift": 1, "lesson_learned": 1, "metric": 1};
 const typeLabels = Object.keys(typeData);
 const typeValues = Object.values(typeData);
 if (typeLabels.length > 0) {
@@ -714,8 +791,8 @@ if (typeLabels.length > 0) {
 }
 
 // Agent Activity (radar)
-const sentData = {"beren": 3};
-const recvData = {"huor": 2, "tuor": 1};
+const sentData = {"beren": 4, "huor": 2, "tuor": 1};
+const recvData = {"huor": 3, "tuor": 2, "beren": 2};
 const agentLabels = [...new Set([...Object.keys(sentData), ...Object.keys(recvData)])].filter(a => ['huor','tuor','beren'].includes(a));
 if (agentLabels.length > 0) {
     new Chart(document.getElementById('agentActivityChart'), {
@@ -787,7 +864,7 @@ if (Object.keys(repoData).length > 0) {
 }
 
 // Velocity trend (line)
-const velData = [{"ts": "2026-03-10", "velocity": 1.57}, {"ts": "2026-03-10", "velocity": 1.57}, {"ts": "2026-03-10", "velocity": 1.57}, {"ts": "2026-03-10", "velocity": 1.57}, {"ts": "2026-03-10", "velocity": 1.57}, {"ts": "2026-03-10", "velocity": 1.57}, {"ts": "2026-03-10", "velocity": 1.57}, {"ts": "2026-03-10", "velocity": 1.57}, {"ts": "2026-03-10", "velocity": 1.57}, {"ts": "2026-03-10", "velocity": 1.57}, {"ts": "2026-03-10", "velocity": 1.57}, {"ts": "2026-03-10", "velocity": 1.57}, {"ts": "2026-03-10", "velocity": 1.57}, {"ts": "2026-03-10", "velocity": 1.57}];
+const velData = [{"ts": "2026-03-10", "velocity": 1.71}, {"ts": "2026-03-10", "velocity": 1.71}, {"ts": "2026-03-10", "velocity": 1.71}, {"ts": "2026-03-10", "velocity": 1.71}, {"ts": "2026-03-10", "velocity": 1.71}, {"ts": "2026-03-10", "velocity": 1.71}, {"ts": "2026-03-10", "velocity": 1.71}, {"ts": "2026-03-10", "velocity": 1.71}, {"ts": "2026-03-10", "velocity": 1.71}, {"ts": "2026-03-10", "velocity": 1.71}, {"ts": "2026-03-11", "velocity": 1.71}, {"ts": "2026-03-11", "velocity": 1.71}, {"ts": "2026-03-11", "velocity": 1.71}, {"ts": "2026-03-11", "velocity": 1.71}];
 if (velData.length > 0) {
     new Chart(document.getElementById('velocityChart'), {
         type: 'line',
@@ -802,7 +879,7 @@ if (velData.length > 0) {
 }
 
 // Task status (doughnut)
-const taskData = {"done": 11, "closed": 8, "failed": 2};
+const taskData = {"done": 12, "closed": 8, "failed": 2};
 if (Object.keys(taskData).length > 0) {
     const statusColors = { done: COLORS.green, running: COLORS.blue, pr_open: COLORS.yellow, failed: COLORS.red, closed: COLORS.orange, queued: COLORS.purple };
     new Chart(document.getElementById('taskChart'), {
@@ -816,7 +893,7 @@ if (Object.keys(taskData).length > 0) {
 }
 
 // PR Latency (bar)
-const prData = [{"pr": "patrickkidd/btcopilot#53", "hours": 50.7, "state": "CLOSED"}, {"pr": "patrickkidd/btcopilot#51", "hours": 8.2, "state": "MERGED"}, {"pr": "patrickkidd/btcopilot#49", "hours": 142.6, "state": "CLOSED"}, {"pr": "patrickkidd/btcopilot#48", "hours": 143.3, "state": "CLOSED"}, {"pr": "patrickkidd/btcopilot#47", "hours": 143.9, "state": "CLOSED"}, {"pr": "patrickkidd/btcopilot#46", "hours": 67.6, "state": "CLOSED"}, {"pr": "patrickkidd/btcopilot#44", "hours": 153.6, "state": "CLOSED"}, {"pr": "patrickkidd/familydiagram#88", "hours": 157.4, "state": "CLOSED"}, {"pr": "patrickkidd/btcopilot#89", "hours": 118.0, "state": "MERGED"}, {"pr": "patrickkidd/btcopilot#88", "hours": 118.1, "state": "MERGED"}, {"pr": "patrickkidd/btcopilot#86", "hours": 118.4, "state": "CLOSED"}, {"pr": "patrickkidd/btcopilot#76", "hours": 123.7, "state": "MERGED"}, {"pr": "patrickkidd/btcopilot#73", "hours": 136.3, "state": "CLOSED"}, {"pr": "patrickkidd/btcopilot#60", "hours": 144.4, "state": "CLOSED"}, {"pr": "patrickkidd/btcopilot#54", "hours": 150.5, "state": "CLOSED"}, {"pr": "patrickkidd/btcopilot#45", "hours": 165.9, "state": "CLOSED"}, {"pr": "patrickkidd/btcopilot#97", "hours": 111.1, "state": "CLOSED"}, {"pr": "patrickkidd/btcopilot#75", "hours": 124.1, "state": "CLOSED"}, {"pr": "patrickkidd/btcopilot#52", "hours": 161.4, "state": "CLOSED"}, {"pr": "patrickkidd/btcopilot#70", "hours": 143.4, "state": "MERGED"}];
+const prData = [{"pr": "patrickkidd/btcopilot#73", "hours": 136.3, "state": "CLOSED"}, {"pr": "patrickkidd/btcopilot#60", "hours": 144.4, "state": "CLOSED"}, {"pr": "patrickkidd/btcopilot#54", "hours": 150.5, "state": "CLOSED"}, {"pr": "patrickkidd/btcopilot#45", "hours": 165.9, "state": "CLOSED"}, {"pr": "patrickkidd/btcopilot#97", "hours": 111.1, "state": "CLOSED"}, {"pr": "patrickkidd/btcopilot#75", "hours": 124.1, "state": "CLOSED"}, {"pr": "patrickkidd/btcopilot#52", "hours": 161.4, "state": "CLOSED"}, {"pr": "patrickkidd/btcopilot#70", "hours": 143.4, "state": "MERGED"}];
 if (prData.length > 0) {
     new Chart(document.getElementById('prLatencyChart'), {
         type: 'bar',

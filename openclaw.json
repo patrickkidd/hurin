@@ -28,6 +28,7 @@
   },
   "agents": {
     "defaults": {
+      "timeoutSeconds": 900,
       "model": {
         "primary": "minimax/MiniMax-M2.5"
       },

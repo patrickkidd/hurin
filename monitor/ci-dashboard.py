@@ -81,9 +81,33 @@ def latest_file_date(directory, pattern="*"):
 
 def collect_signal_data():
     signals = read_jsonl(SHARED_DIR / "signals.jsonl")
+    impacts = read_jsonl(SHARED_DIR / "signal_impact.jsonl")
+    
+    total = len(signals)
+    consumed = sum(1 for s in signals if s.get("consumed"))
+    latencies = [i.get("latency_seconds", 0) for i in impacts if i.get("latency_seconds")]
+    
+    # KPIs
+    sdr = round(consumed / max(total, 1) * 100, 1)
+    mrl = round(sum(latencies) / max(len(latencies), 1), 0) if latencies else 0
+    
+    # SV: signals per day
+    if signals:
+        dates = [datetime.fromisoformat(s.get("ts", "").replace("Z", "+00:00")).date() for s in signals if s.get("ts")]
+        if dates:
+            days = max((max(dates) - min(dates)).days, 1)
+            sv = round(total / days, 1)
+        else:
+            sv = 0
+    else:
+        sv = 0
+    
+    # IS: Influence Score
+    is_score = round(len([i for i in impacts if i.get("action_taken")]) / max(len(impacts), 1) * 100, 1) if impacts else 0
+    
     stats = {
-        "total": len(signals),
-        "consumed": sum(1 for s in signals if s.get("consumed")),
+        "total": total,
+        "consumed": consumed,
         "influenced": sum(1 for s in signals if s.get("influenced_decision")),
         "by_type": {},
         "by_flow": {},
@@ -91,6 +115,10 @@ def collect_signal_data():
         "by_agent_received": {},
         "timeline": [],
         "recent": signals[-20:],
+        "sdr": sdr,
+        "mrl": mrl,
+        "sv": sv,
+        "is_score": is_score,
     }
     for s in signals:
         t = s.get("type", "unknown")
@@ -287,6 +315,45 @@ def generate_html(data):
     consumption_rate = round(signals["consumed"] / max(signals["total"], 1) * 100, 1)
     influence_rate = round(signals["influenced"] / max(signals["consumed"], 1) * 100, 1)
     episode_count = episodes["total"]
+
+    # === VALUE KPIs: Compare outcomes with vs without signals ===
+    impacts = read_jsonl(SHARED_DIR / "signal_impact.jsonl")
+    
+    # Signal Influence KPIs
+    total_consumed = len([i for i in impacts if i.get("consumed_at")])
+    influenced = len([i for i in impacts if i.get("action_taken")])
+    not_influenced = total_consumed - influenced
+    
+    # Calculate delta metrics (episodes with signals vs without)
+    eps_with_signals = [e for e in episodes.get("recent", []) if e.get("cross_agent_signals_consumed")]
+    eps_without_signals = [e for e in episodes.get("recent", []) if not e.get("cross_agent_signals_consumed")]
+    
+    # Cycle time comparison
+    cycle_with = sum(e.get("duration_hrs", 0) for e in eps_with_signals) / max(len(eps_with_signals), 1)
+    cycle_without = sum(e.get("duration_hrs", 0) for e in eps_without_signals) / max(len(eps_without_signals), 1)
+    cycle_delta = cycle_with - cycle_without  # Negative = signals help (faster)
+    
+    # Success rate comparison
+    success_with = len([e for e in eps_with_signals if e.get("outcome") == "completed"]) / max(len(eps_with_signals), 1)
+    success_without = len([e for e in eps_without_signals if e.get("outcome") == "completed"]) / max(len(eps_without_signals), 1)
+    success_delta = (success_with - success_without) * 100  # In percentage points
+    
+    # Signal quality score (influenced / consumed)
+    signal_quality = round(influenced / max(total_consumed, 1) * 100, 1) if total_consumed > 0 else 0
+    
+    # Pack KPIs for template
+    value_kpis = {
+        "signal_quality": signal_quality,
+        "cycle_delta": round(cycle_delta, 1),
+        "cycle_with": round(cycle_with, 1),
+        "cycle_without": round(cycle_without, 1),
+        "success_delta": round(success_delta, 1),
+        "success_with": round(success_with * 100, 1),
+        "success_without": round(success_without * 100, 1),
+        "eps_with_signals": len(eps_with_signals),
+        "eps_without_signals": len(eps_without_signals),
+        "total_impacts": total_consumed,
+    }
     lesson_count = episodes["total_lessons"]
     challenge_count = calibrations["total"]
     signal_total = signals["total"]
@@ -430,12 +497,14 @@ h1 {{
 
 /* Grid */
 .grid {{ display: grid; gap: 20px; margin-bottom: 24px; }}
+.grid-5 {{ grid-template-columns: repeat(5, 1fr); }}
 .grid-4 {{ grid-template-columns: repeat(4, 1fr); }}
 .grid-3 {{ grid-template-columns: repeat(3, 1fr); }}
 .grid-2 {{ grid-template-columns: repeat(2, 1fr); }}
 .grid-1 {{ grid-template-columns: 1fr; }}
-@media (max-width: 1200px) {{ .grid-4 {{ grid-template-columns: repeat(2, 1fr); }} }}
-@media (max-width: 768px) {{ .grid-4, .grid-3, .grid-2 {{ grid-template-columns: 1fr; }} }}
+@media (max-width: 1400px) {{ .grid-5 {{ grid-template-columns: repeat(3, 1fr); }} }}
+@media (max-width: 1200px) {{ .grid-5, .grid-4 {{ grid-template-columns: repeat(2, 1fr); }} }}
+@media (max-width: 768px) {{ .grid-5, .grid-4, .grid-3, .grid-2 {{ grid-template-columns: 1fr; }} }}
 
 /* Cards */
 .card {{
@@ -618,6 +687,10 @@ tr:hover td {{ background: var(--bg-card-hover); }}
 
 /* Chart containers */
 .chart-container {{
+    min-height: 180px;
+}}
+
+.chart-container-sm {{
     position: relative;
     height: 250px;
     width: 100%;
@@ -660,40 +733,67 @@ tr:hover td {{ background: var(--bg-card-hover); }}
     <div class="sprint-subtext">Patrick: &ldquo;{patrick_last}&rdquo;</div>
 </div>
 
-<!-- KPI Row -->
-<div class="grid grid-4">
-    <div class="card">
-        <div class="card-header">
-            <span class="card-title">Signals Total</span>
-            <span class="card-icon">&#x1F4E1;</span>
-        </div>
-        <div class="kpi-value">{signal_total}</div>
-        <div class="kpi-detail">{signals['consumed']} consumed &middot; {signals['influenced']} influenced decisions</div>
+<!-- CI KPIs: 5-column layout -->
+<div class="grid grid-5">
+    <div class="card" title="Signals successfully received by target agents">
+        <div class="card-header"><span class="card-title">Delivery Rate</span><span class="card-icon">&#x1F4E6;</span></div>
+        <div class="kpi-value {'kpi-good' if signals.get('sdr', 0) >= 70 else 'kpi-warn' if signals.get('sdr', 0) >= 40 else 'kpi-bad'}">{signals.get('sdr', 0):.0f}<span class="kpi-unit">%</span></div>
+        <div class="kpi-detail">% of signals consumed</div>
     </div>
-    <div class="card">
-        <div class="card-header">
-            <span class="card-title">Consumption Rate</span>
-            <span class="card-icon">&#x2705;</span>
-        </div>
-        <div class="kpi-value {'kpi-good' if consumption_rate >= 80 else 'kpi-warn' if consumption_rate >= 50 else 'kpi-bad'}">{consumption_rate}<span class="kpi-unit">%</span></div>
-        <div class="kpi-detail">Target: &gt; 80% &mdash; {"On track" if consumption_rate >= 80 else "Needs attention" if consumption_rate >= 50 else "Critical — agents not reading signals"}</div>
+    <div class="card" title="Average time for agents to act on signals">
+        <div class="card-header"><span class="card-title">Response Latency</span><span class="card-icon">&#x23F1;</span></div>
+        <div class="kpi-value {'kpi-good' if signals.get('mrl', 0) <= 3600 else 'kpi-warn' if signals.get('mrl', 0) <= 86400 else 'kpi-bad'}">{signals.get('mrl', 0):.0f}<span class="kpi-unit">s</span></div>
+        <div class="kpi-detail">avg seconds to respond</div>
     </div>
-    <div class="card">
-        <div class="card-header">
-            <span class="card-title">Episodes Captured</span>
-            <span class="card-icon">&#x1F4DA;</span>
-        </div>
+    <div class="card" title="How often signals are being sent">
+        <div class="card-header"><span class="card-title">Signal Velocity</span><span class="card-icon">&#x26A1;</span></div>
+        <div class="kpi-value {'kpi-good' if signals.get('sv', 0) >= 0.5 else 'kpi-warn' if signals.get('sv', 0) >= 0.1 else 'kpi-bad'}">{signals.get('sv', 0):.1f}<span class="kpi-unit">/d</span></div>
+        <div class="kpi-detail">signals per day</div>
+    </div>
+    <div class="card" title="Signals that changed agent decisions">
+        <div class="card-header"><span class="card-title">Influence</span><span class="card-icon">&#x1F4A1;</span></div>
+        <div class="kpi-value {'kpi-good' if signals.get('is_score', 0) >= 50 else 'kpi-warn' if signals.get('is_score', 0) >= 25 else 'kpi-bad'}">{signals.get('is_score', 0):.0f}<span class="kpi-unit">%</span></div>
+        <div class="kpi-detail">% with action taken</div>
+    </div>
+    <div class="card" title="Learning episodes captured from work">
+        <div class="card-header"><span class="card-title">Episodes</span><span class="card-icon">&#x1F4DA;</span></div>
         <div class="kpi-value">{episode_count}</div>
-        <div class="kpi-detail">{lesson_count} lessons extracted &middot; {episodes['with_signals']} CI-informed</div>
+        <div class="kpi-detail">{lesson_count} lessons</div>
     </div>
-    <div class="card">
-        <div class="card-header">
-            <span class="card-title">Adversarial Challenges</span>
-            <span class="card-icon">&#x2694;&#xFE0F;</span>
-        </div>
-        <div class="kpi-value">{challenge_count}</div>
-        <div class="kpi-detail">{"No calibrations yet — resolve disagreements to build data" if challenge_count == 0 else f"{len(calibrations.get('accuracy_by_agent', {}))} agents with accuracy scores"}</div>
+</div>
+
+<!-- VALUE KPIs: Is CI adding value? -->
+<div class="section-header"><span class="icon">&#x1F4B0;</span> Value KPIs: Is CI Adding Value?</div>
+<div class="grid grid-5">
+    <div class="card" title="% of consumed signals that influenced decisions">
+        <div class="card-header"><span class="card-title">Signal Quality</span><span class="card-icon">&#x2728;</span></div>
+        <div class="kpi-value {'kpi-good' if value_kpis.get('signal_quality', 0) >= 50 else 'kpi-warn' if value_kpis.get('signal_quality', 0) >= 25 else 'kpi-bad'}">{value_kpis.get('signal_quality', 0):.0f}<span class="kpi-unit">%</span></div>
+        <div class="kpi-detail">{value_kpis.get('total_impacts', 0)} consumed signals</div>
     </div>
+    <div class="card" title="Avg cycle time with signals - avg cycle time without">
+        <div class="card-header"><span class="card-title">Cycle Time Delta</span><span class="card-icon">&#x1F504;</span></div>
+        <div class="kpi-value {'kpi-good' if value_kpis.get('cycle_delta', 0) < 0 else 'kpi-warn' if value_kpis.get('cycle_delta', 0) < 5 else 'kpi-bad'}">{value_kpis.get('cycle_delta', 0):+.1f}<span class="kpi-unit">h</span></div>
+        <div class="kpi-detail">{value_kpis.get('cycle_with', 0):.1f}h with / {value_kpis.get('cycle_without', 0):.1f}h without</div>
+    </div>
+    <div class="card" title="Success rate with signals - success rate without">
+        <div class="card-header"><span class="card-title">Success Delta</span><span class="card-icon">&#x1F3C6;</span></div>
+        <div class="kpi-value {'kpi-good' if value_kpis.get('success_delta', 0) > 0 else 'kpi-warn' if value_kpis.get('success_delta', 0) > -10 else 'kpi-bad'}">{value_kpis.get('success_delta', 0):+.1f}<span class="kpi-unit">pp</span></div>
+        <div class="kpi-detail">{value_kpis.get('success_with', 0):.0f}% with / {value_kpis.get('success_without', 0):.0f}% without</div>
+    </div>
+    <div class="card" title="Episodes where signals were consumed">
+        <div class="card-header"><span class="card-title">Episodes w/Signals</span><span class="card-icon">&#x1F4E7;</span></div>
+        <div class="kpi-value">{value_kpis.get('eps_with_signals', 0)}</div>
+        <div class="kpi-detail">{value_kpis.get('eps_without_signals', 0)} without</div>
+    </div>
+    <div class="card" title="Raw influence tracking from signal_impact.jsonl">
+        <div class="card-header"><span class="card-title">Influence Tracked</span><span class="card-icon">&#x1F4CB;</span></div>
+        <div class="kpi-value">{value_kpis.get('total_impacts', 0)}</div>
+        <div class="kpi-detail">signal_impact entries</div>
+    </div>
+</div>
+<div class="kpi-note">
+    <strong>Note:</strong> Negative cycle delta = signals help tasks complete faster. Positive success delta = signals improve outcomes.
+    Compare episodes with signals consumed vs. without to compute deltas.
 </div>
 
 <!-- Agent Topology -->
@@ -702,7 +802,7 @@ tr:hover td {{ background: var(--bg-card-hover); }}
     <div class="card">
         <div class="card-header"><span class="card-title">Network Topology</span></div>
         <div class="topology-container">
-            <svg viewBox="0 0 600 400" width="560" height="370" xmlns="http://www.w3.org/2000/svg">
+            <svg viewBox="0 0 600 400" width="700" height="450" xmlns="http://www.w3.org/2000/svg">
                 <!-- Definitions -->
                 <defs>
                     <filter id="glow">
@@ -773,7 +873,13 @@ tr:hover td {{ background: var(--bg-card-hover); }}
 
                 <!-- Flow: Beren → Tuor (red-team) -->
                 <path d="M 340 318 Q 470 250 470 124" fill="none" stroke="#a78bfa" stroke-width="2" opacity="0.6" marker-end="url(#arrow-beren)" stroke-dasharray="6,3"/>
-                <text x="465" y="260" text-anchor="end" fill="#a78bfa" font-size="9" opacity="0.7">red-team &#x2694;</text>
+                <text x="465" y="260" text-anchor="end" fill="#a78bfa" font-size="9" opacity="0.7">red-team</text>
+
+                <!-- Flow: Tuor → Huor (red-team) -->
+                <path d="M 406 74 Q 300 20 194 74" fill="none" stroke="#a78bfa" stroke-width="2" opacity="0.5" marker-end="url(#arrow-tuor)" stroke-dasharray="6,3"/>
+                
+                <!-- Flow: Beren → Huor (red-team) -->
+                <path d="M 138 122 Q 100 180 100 165" fill="none" stroke="#a78bfa" stroke-width="1.5" opacity="0.4" marker-end="url(#arrow-huor)" stroke-dasharray="4,2"/>
 
                 <!-- Flow: All → Shared Memory -->
                 <line x1="165" y1="120" x2="220" y2="165" stroke="#2a2e3e" stroke-width="1" stroke-dasharray="3,3" opacity="0.4"/>
@@ -783,6 +889,8 @@ tr:hover td {{ background: var(--bg-card-hover); }}
                 <!-- Flow counts (dynamic) -->
                 <text x="300" y="16" text-anchor="middle" fill="#8b8fa3" font-size="10">{signal_total} signals total</text>
             </svg>
+            <!-- Legend -->
+
         </div>
     </div>
     <div class="card">
@@ -798,30 +906,30 @@ tr:hover td {{ background: var(--bg-card-hover); }}
 <div class="grid grid-3">
     <div class="card">
         <div class="card-header"><span class="card-title">Signal Types Distribution</span></div>
-        <div class="chart-container-sm">
+        <div class="chart-container-sm" style="min-height: 160px;">
             <canvas id="typeChart"></canvas>
         </div>
     </div>
     <div class="card">
-        <div class="card-header"><span class="card-title">Influence Rate</span></div>
-        <div class="kpi-value {'kpi-good' if influence_rate >= 20 else 'kpi-warn' if influence_rate >= 10 else 'kpi-bad'}" style="font-size: 48px; text-align: center; padding-top: 30px;">
-            {influence_rate}<span class="kpi-unit">%</span>
+        <div class="card-header"><span class="card-title">Agent Activity Balance</span></div>
+        <div class="chart-container">
+            <canvas id="agentActivityChart"></canvas>
         </div>
         <div class="kpi-detail" style="text-align: center; margin-top: 12px;">
-            of consumed signals influenced a decision<br>
-            Target: &gt; 20% &mdash; {"Healthy signal quality" if influence_rate >= 20 else "Signals may be too noisy or low-value"}
-        </div>
-    </div>
-    <div class="card">
-        <div class="card-header"><span class="card-title">Agent Activity Balance</span></div>
-        <div class="chart-container-sm">
-            <canvas id="agentActivityChart"></canvas>
+            Shows which agents are sending vs receiving signals.<br>
+            <strong>Team Lead (Huor)</strong> should send more than receive.<br>
+            <strong>Co-Founder (Tuor)</strong> signals strategic priorities.<br>
+            <strong>Chief of Staff (Beren)</strong> coordinates corrections.
         </div>
     </div>
 </div>
 
 <!-- Adversarial Health -->
 <div class="section-header"><span class="icon">&#x2694;&#xFE0F;</span> Adversarial Improvement</div>
+<div class="adversarial-note">
+    <strong>Red-team</strong> is when Beren challenges Tuor's recommendations or Huor's priorities — 
+    like a devil's advocate to stress-test decisions before execution. This is <em>productive</em> conflict.
+</div>
 <div class="grid grid-2">
     <div class="card">
         <div class="card-header"><span class="card-title">Challenge Accuracy by Agent</span></div>

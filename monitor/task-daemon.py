@@ -780,6 +780,7 @@ async def run_task(entry, is_respawn=False, respawn_context=""):
     # --- Build SDK options ---
     env = {
         "PATH": "/usr/local/bin:" + str(HOME / ".local/bin") + ":" + os.environ.get("PATH", ""),
+        "ANTHROPIC_API_KEY": "",  # Force Max plan — SDK merges os.environ first, this overrides
     }
     # Only set GH_TOKEN if we have a bot token; otherwise let gh use system auth
     if BOT_TOKEN:
@@ -1485,12 +1486,38 @@ BOSS_GITHUB_USER = "patrickkidd"
 REVIEWED_BY_CLAUDE_LABEL = "reviewed-by-claude"
 PR_MENTION_REPOS = ["patrickkidd/familydiagram", "patrickkidd/btcopilot", "patrickkidd/fdserver"]
 
-# In-memory tracking: {tracking_key: last_comment_id}
-_pr_last_seen_comment = {}
+# Persistent tracking for PR comments (survives restarts)
+PR_COMMENT_CURSOR_FILE = MONITOR_DIR / "pr-comment-cursors.json"
+PR_MENTION_CURSOR_FILE = MONITOR_DIR / "pr-mention-cursors.json"
+
 _pr_followup_pending = set()
-# For @mention tracking: {"repo:pr_num": last_comment_id}
-_pr_mention_last_seen = {}
 _pr_mention_pending = set()
+
+
+def _load_pr_comment_cursors():
+    if PR_COMMENT_CURSOR_FILE.exists():
+        try:
+            return json.loads(PR_COMMENT_CURSOR_FILE.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
+
+
+def _save_pr_comment_cursors(cursors):
+    PR_COMMENT_CURSOR_FILE.write_text(json.dumps(cursors, indent=2))
+
+
+def _load_pr_mention_cursors():
+    if PR_MENTION_CURSOR_FILE.exists():
+        try:
+            return json.loads(PR_MENTION_CURSOR_FILE.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
+
+
+def _save_pr_mention_cursors(cursors):
+    PR_MENTION_CURSOR_FILE.write_text(json.dumps(cursors, indent=2))
 
 
 def _load_pr_cooldowns():
@@ -1710,6 +1737,10 @@ def check_pr_comments():
     task completes). When Patrick or a reviewer (including Gemini) comments,
     enqueues a follow-up that resumes the saved session.
 
+    Cursors persist to disk so restarts don't cause gaps.
+    On first encounter, if the latest comment is from Patrick, process it
+    immediately instead of skipping.
+
     Anti-thrashing:
     - Per-PR cooldown (30 min) after processing — prevents feedback loops
     - Running task gate — won't queue if task already running for this PR
@@ -1717,6 +1748,8 @@ def check_pr_comments():
     """
     data = load_registry()
     now = time.time()
+    cursors = _load_pr_comment_cursors()
+    cursors_changed = False
 
     for task in data.get("tasks", []):
         tid = task["id"]
@@ -1761,15 +1794,29 @@ def check_pr_comments():
         if not all_comments:
             continue
 
-        # Initialize cursor on first encounter
-        if tid not in _pr_last_seen_comment:
-            _pr_last_seen_comment[tid] = all_comments[-1]["id"]
-            continue
+        # Initialize cursor on first encounter — but if the latest comment
+        # is from Patrick (the boss), process it immediately instead of skipping.
+        if tid not in cursors:
+            last = all_comments[-1]
+            if last.get("author") == BOSS_GITHUB_USER and (last.get("body") or "").strip():
+                # Set cursor to second-to-last so Patrick's comment gets detected
+                if len(all_comments) >= 2:
+                    cursors[tid] = all_comments[-2]["id"]
+                else:
+                    # Only comment is Patrick's — use a sentinel that won't match
+                    cursors[tid] = "__init__"
+                cursors_changed = True
+                # Fall through to detection below
+            else:
+                cursors[tid] = last["id"]
+                cursors_changed = True
+                continue
 
         new_comments, new_cursor, valid = _find_new_comments(
-            all_comments, _pr_last_seen_comment[tid]
+            all_comments, cursors[tid]
         )
-        _pr_last_seen_comment[tid] = new_cursor
+        cursors[tid] = new_cursor
+        cursors_changed = True
 
         if not valid or not new_comments:
             continue
@@ -1807,6 +1854,9 @@ def check_pr_comments():
 
         log.info(f"  Enqueued PR comment follow-up for {tid}")
 
+    if cursors_changed:
+        _save_pr_comment_cursors(cursors)
+
 
 def check_pr_mentions():
     """Check all open PRs for Patrick's comments or @patrickkidd-hurin mentions.
@@ -1817,6 +1867,7 @@ def check_pr_mentions():
     - Anyone @mentions the bot → respond
 
     Spawns a fresh task since there's no session to resume.
+    Cursors persist to disk so restarts don't cause gaps.
 
     Anti-thrashing:
     - One active task per PR (pending flag keyed by repo:pr_num)
@@ -1831,6 +1882,9 @@ def check_pr_mentions():
         pr = task.get("pr")
         if repo and pr and task["status"] in ("pr_open", "done"):
             tracked_prs.add(f"{repo}:{pr}")
+
+    mention_cursors = _load_pr_mention_cursors()
+    mention_cursors_changed = False
 
     for gh_repo in PR_MENTION_REPOS:
         repo_short = gh_repo.split("/")[1]
@@ -1870,15 +1924,25 @@ def check_pr_mentions():
             if not all_comments:
                 continue
 
-            # Initialize cursor on first encounter
-            if pr_key not in _pr_mention_last_seen:
-                _pr_mention_last_seen[pr_key] = all_comments[-1]["id"]
-                continue
+            # Initialize cursor on first encounter — but process if latest is from Patrick
+            if pr_key not in mention_cursors:
+                last = all_comments[-1]
+                if last.get("author") == BOSS_GITHUB_USER and (last.get("body") or "").strip():
+                    if len(all_comments) >= 2:
+                        mention_cursors[pr_key] = all_comments[-2]["id"]
+                    else:
+                        mention_cursors[pr_key] = "__init__"
+                    mention_cursors_changed = True
+                else:
+                    mention_cursors[pr_key] = last["id"]
+                    mention_cursors_changed = True
+                    continue
 
             new_comments, new_cursor, valid = _find_new_comments(
-                all_comments, _pr_mention_last_seen[pr_key]
+                all_comments, mention_cursors[pr_key]
             )
-            _pr_mention_last_seen[pr_key] = new_cursor
+            mention_cursors[pr_key] = new_cursor
+            mention_cursors_changed = True
 
             if not valid or not new_comments:
                 continue
@@ -1936,6 +2000,225 @@ def check_pr_mentions():
             run(f"{GH_BIN} pr comment {pr_num} --repo {gh_repo} --body {json.dumps(ack_body)}")
 
             log.info(f"  Spawned mention task {task_id} for {gh_repo} PR #{pr_num}")
+
+    if mention_cursors_changed:
+        _save_pr_mention_cursors(mention_cursors)
+
+
+# ---------------------------------------------------------------------------
+# Issue comment monitoring — route Patrick's issue comments to Huor
+# ---------------------------------------------------------------------------
+
+ISSUE_COMMENT_REPOS = ["patrickkidd/familydiagram", "patrickkidd/btcopilot", "patrickkidd/fdserver"]
+ISSUE_COMMENT_COOLDOWN_SECS = 5 * 60  # 5 min cooldown per issue (short for conversational flow)
+OPENCLAW_BIN = HOME / ".npm-global/bin/openclaw"
+
+# Persistent tracking: {"repo:issue_num": last_comment_id}
+ISSUE_CURSOR_FILE = MONITOR_DIR / "issue-comment-cursors.json"
+ISSUE_COOLDOWN_FILE = MONITOR_DIR / "issue-comment-cooldowns.json"
+
+
+def _load_issue_cursors():
+    if ISSUE_CURSOR_FILE.exists():
+        try:
+            return json.loads(ISSUE_CURSOR_FILE.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
+
+
+def _save_issue_cursors(cursors):
+    ISSUE_CURSOR_FILE.write_text(json.dumps(cursors, indent=2))
+
+
+def _load_issue_cooldowns():
+    if ISSUE_COOLDOWN_FILE.exists():
+        try:
+            return json.loads(ISSUE_COOLDOWN_FILE.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
+
+
+def _save_issue_cooldowns(cooldowns):
+    ISSUE_COOLDOWN_FILE.write_text(json.dumps(cooldowns, indent=2))
+
+
+def _openclaw_env():
+    """Build env dict with secrets for openclaw CLI (needs Discord bot tokens to read config)."""
+    env = os.environ.copy()
+    secrets_file = HOME / ".openclaw/secrets.json"
+    if secrets_file.exists():
+        try:
+            secrets = json.loads(secrets_file.read_text())
+            env["HUOR_DISCORD_BOT_TOKEN"] = secrets.get("huor-discord-bot-token", "")
+            env["TUOR_DISCORD_BOT_TOKEN"] = secrets.get("tuor-discord-bot-token", "")
+            env["BEREN_DISCORD_BOT_TOKEN"] = secrets.get("beren-discord-bot-token", "")
+            env["GATEWAY_AUTH_TOKEN"] = secrets.get("gateway-auth-token", "")
+            env["MINIMAX_API_KEY"] = secrets.get("minimax-api-key", "")
+        except (json.JSONDecodeError, IOError):
+            pass
+    # Never leak API key — Max plan only
+    env.pop("ANTHROPIC_API_KEY", None)
+    return env
+
+
+def send_to_huor(message):
+    """Send a message directly to Huor agent via openclaw CLI.
+
+    Runs with a 10-minute timeout (Huor may use exec to spawn tasks).
+    Catches all exceptions so a failure never crashes the main loop.
+    """
+    try:
+        result = subprocess.run(
+            [str(OPENCLAW_BIN), "agent", "--agent", "huor", "--message", message],
+            capture_output=True, text=True, env=_openclaw_env(), timeout=600,
+        )
+        if result.returncode != 0:
+            log.warning(f"  send_to_huor failed: {result.stderr[:200]}")
+        else:
+            log.info("  Message delivered to Huor")
+        return result.returncode == 0
+    except subprocess.TimeoutExpired:
+        log.warning("  send_to_huor timed out after 600s")
+        return False
+    except Exception as e:
+        log.warning(f"  send_to_huor error: {e}")
+        return False
+
+
+def check_issue_comments():
+    """Check open issues for new comments from Patrick → route to Huor.
+
+    Polls all open issues in the 3 product repos. When Patrick comments,
+    sends the comment directly to Huor agent to triage (spawn task, update
+    knowledge, or ignore).
+
+    Cursors and cooldowns persist to disk so restarts don't cause gaps.
+
+    Anti-thrashing:
+    - Per-issue cooldown (5 min)
+    - Skips bot's own comments
+    - Initializes cursor on first encounter (no backlog processing)
+    """
+    now = time.time()
+    cursors = _load_issue_cursors()
+    cooldowns = _load_issue_cooldowns()
+    cursors_changed = False
+    cooldowns_changed = False
+
+    for gh_repo in ISSUE_COMMENT_REPOS:
+        repo_short = gh_repo.split("/")[1]
+
+        # Fetch open issues (exclude PRs — gh issues list already does this)
+        rc, out, _ = run(
+            f"{GH_BIN} issue list --repo {gh_repo} --state open "
+            f"--json number,title --limit 50"
+        )
+        if rc != 0 or not out:
+            continue
+        try:
+            issues = json.loads(out)
+        except json.JSONDecodeError:
+            continue
+
+        for issue in issues:
+            issue_num = issue["number"]
+            issue_key = f"{repo_short}:{issue_num}"
+
+            # Anti-thrashing: skip if on cooldown
+            cooldown_expiry = cooldowns.get(issue_key, 0)
+            if now < cooldown_expiry:
+                continue
+
+            # Fetch issue comments
+            rc, out, _ = run(
+                f"{GH_BIN} api repos/{gh_repo}/issues/{issue_num}/comments "
+                f"--jq 'sort_by(.created_at)'"
+            )
+            if rc != 0 or not out:
+                continue
+            try:
+                all_comments = json.loads(out)
+            except json.JSONDecodeError:
+                continue
+
+            if not all_comments:
+                continue
+
+            # Initialize cursor on first encounter — but process if latest is from Patrick
+            if issue_key not in cursors:
+                last = all_comments[-1]
+                last_author = last.get("user", {}).get("login", "")
+                if last_author == BOSS_GITHUB_USER and (last.get("body") or "").strip():
+                    if len(all_comments) >= 2:
+                        cursors[issue_key] = all_comments[-2]["id"]
+                    else:
+                        cursors[issue_key] = "__init__"
+                    cursors_changed = True
+                    # Fall through to detection below
+                else:
+                    cursors[issue_key] = last["id"]
+                    cursors_changed = True
+                    continue
+
+            # Find new comments after cursor
+            last_seen = cursors[issue_key]
+            found_last = False
+            new_comments = []
+            for c in all_comments:
+                if c["id"] == last_seen:
+                    found_last = True
+                    continue
+                if found_last:
+                    author = c.get("user", {}).get("login", "")
+                    if author == BOT_GITHUB_USER:
+                        continue
+                    if author == BOSS_GITHUB_USER and (c.get("body") or "").strip():
+                        new_comments.append(c)
+
+            # Update cursor
+            cursors[issue_key] = all_comments[-1]["id"]
+            cursors_changed = True
+
+            if not found_last or not new_comments:
+                continue
+
+            # Send directly to Huor agent
+            for c in new_comments:
+                body = (c.get("body") or "").strip()
+                comment_url = c.get("html_url", "")
+                msg = (
+                    f"[GitHub issue comment] Patrick commented on "
+                    f"{repo_short}#{issue_num} ({issue.get('title', '')}):\n\n"
+                    f"> {body}\n\n"
+                    f"{comment_url}\n\n"
+                    f"Follow the 'GitHub Issue Comment Handling' section in your SOUL.md.\n"
+                    f"Most issue comments require repo/code context — spawn a CC task:\n"
+                    f"  exec: task spawn {repo_short} issue-{issue_num}-comment "
+                    f"'Address Patrick comment on #{issue_num}' <<'PROMPT'\n"
+                    f"Patrick commented on issue #{issue_num} ({issue.get('title', '')}) "
+                    f"in {gh_repo}:\n> {body}\n\n"
+                    f"Read the issue, understand the context, and do what Patrick asked.\n"
+                    f"Reply on the issue when done: "
+                    f"gh issue comment {issue_num} --repo {gh_repo} --body '...'\n"
+                    f"PROMPT\n\n"
+                    f"Then confirm on GitHub:\n"
+                    f"  exec: gh issue comment {issue_num} --repo {gh_repo} "
+                    f"--body 'Spawned a task to handle this.'\n\n"
+                    f"Only handle directly if it's a simple label/close/status command."
+                )
+                send_to_huor(msg)
+                log.info(f"  Routed issue comment to Huor: {repo_short}#{issue_num} ({comment_url})")
+
+            # Set cooldown
+            cooldowns[issue_key] = now + ISSUE_COMMENT_COOLDOWN_SECS
+            cooldowns_changed = True
+
+    if cursors_changed:
+        _save_issue_cursors(cursors)
+    if cooldowns_changed:
+        _save_issue_cooldowns(cooldowns)
 
 
 # ---------------------------------------------------------------------------
@@ -2205,6 +2488,7 @@ async def run_channel_followup(followup):
             "PATH": "/usr/local/bin:" + str(HOME / ".local/bin") + ":" + os.environ.get("PATH", ""),
             "HOME": str(HOME),
             "CLAUDECODE": "",
+            "ANTHROPIC_API_KEY": "",  # Force Max plan — SDK merges os.environ first, this overrides
         }
         if gh_token:
             sdk_env["GH_TOKEN"] = gh_token
@@ -2395,6 +2679,10 @@ async def main_loop():
             # --- Check PR @mentions (every 10th cycle = ~5 min) ---
             if loop_count % 10 == 4:
                 check_pr_mentions()
+
+            # --- Check issue comments (every 10th cycle = ~5 min) ---
+            if loop_count % 10 == 7:
+                check_issue_comments()
 
             # --- Check task thread replies (every 5th cycle = ~2.5 min) ---
             if loop_count % 5 == 2:

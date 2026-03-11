@@ -609,6 +609,26 @@ async def run_digest():
 
     DIGESTS_DIR.mkdir(parents=True, exist_ok=True)
 
+    # Generate a session key for this digest run (for impact tracking)
+    import uuid
+    session_key = str(uuid.uuid4())
+
+    # === Signal Consumption: Read signals addressed to Beren ===
+    try:
+        from shared_memory import read_signals
+        berin_signals = read_signals("beren", max_age_days=14, mark_consumed=True, session_key=session_key)
+        if berin_signals:
+            signal_summary = "\n".join([
+                f"  - [{s['type']}] from {s['from']}: {s['signal'][:150]}..."
+                for s in berin_signals[:5]
+            ])
+            log.info(f"Consumed {len(berin_signals)} signals from Huor/Tuor")
+        else:
+            signal_summary = "  (no signals)"
+    except Exception as e:
+        log.warning(f"Signal consumption failed: {e}")
+        signal_summary = "  (signal read failed)"
+
     # Collect all inputs
     syntheses = collect_recent_syntheses(days=4)
     briefings = collect_recent_briefings(days=7)
@@ -635,7 +655,23 @@ async def run_digest():
         ci_cross_context = ""
         ci_signal_prompt = ""
 
-    prompt = f"""You are the Chief of Staff for an AI agent system supporting Patrick's software development.
+    # === Signal Emission: Beren can signal Huor or Tuor ===
+    try:
+        from shared_memory import append_signal
+        beren_can_signal = True
+        def emit_to_agent(agent, signal_type, message, confidence=0.8):
+            """Emit a signal from Beren to another agent."""
+            append_signal("beren", agent, signal_type, message, confidence=confidence, source_artifact="beren-digest")
+    except Exception as e:
+        log.warning(f"Signal emission setup failed: {e}")
+        beren_can_signal = False
+        def emit_to_agent(*args, **kwargs):
+            pass
+
+    prompt = f"""## Signals from Other Agents
+{signal_summary}
+
+You are the Chief of Staff for an AI agent system supporting Patrick's software development.
 
 Your job is to evaluate the ENTIRE system — not just the project, but how well the agent infrastructure is serving Patrick — and produce a concise strategic digest.
 
@@ -791,6 +827,13 @@ One question Patrick probably doesn't want to think about but should. Could be a
             log.info(f"CI: Emitted {len(emitted)} cross-agent signals from digest")
     except Exception as e:
         log.warning(f"CI signal emission failed (non-fatal): {e}")
+
+    # === Signal Influence Tracking ===
+    try:
+        from shared_memory import read_signals_with_influence_check
+        read_signals_with_influence_check("beren", cc_output, max_age_days=14)
+    except Exception as e:
+        log.warning(f"Signal influence tracking failed (non-fatal): {e}")
 
     # Save digest
     now = datetime.now()

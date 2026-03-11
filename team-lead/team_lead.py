@@ -1414,6 +1414,14 @@ Rules for auto_spawn_candidates:
         synthesis["_session_id"] = session_id
         synthesis["_save_path"] = str(save_path)
 
+    # === Signal Influence Tracking ===
+    try:
+        from shared_memory import read_signals_with_influence_check
+        # Check if signals influenced the synthesis
+        read_signals_with_influence_check("huor", result_text, max_age_days=14)
+    except Exception as e:
+        log.warning(f"Signal influence tracking failed (non-fatal): {e}")
+
     # === Collective Intelligence: Extract and emit cross-agent signals ===
     try:
         from shared_memory import extract_and_emit_signals

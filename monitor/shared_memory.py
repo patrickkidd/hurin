@@ -28,6 +28,7 @@ VALID_SIGNAL_TYPES = {
 }
 
 VALID_AGENTS = {"huor", "tuor", "beren", "system", "all"}
+VALID_URGENCY = {"digest", "priority", "critical"}
 
 
 # --- Helpers ---
@@ -80,8 +81,11 @@ def update_state_field(field, value, updated_by="system"):
 
 # --- Signals ---
 
-def append_signal(from_agent, to_agent, signal_type, signal, confidence=0.8, source_artifact=None):
-    """Append a signal to the bus."""
+def append_signal(from_agent, to_agent, signal_type, signal, confidence=0.8, source_artifact=None, urgency="digest"):
+    """Append a signal to the bus.
+    
+    urgency: "digest" (normal, 2x/week), "priority" (read within 1hr), "critical" (wake agent)
+    """
     if from_agent not in VALID_AGENTS:
         log.warning(f"Invalid from_agent: {from_agent}")
         return
@@ -91,6 +95,9 @@ def append_signal(from_agent, to_agent, signal_type, signal, confidence=0.8, sou
     if signal_type not in VALID_SIGNAL_TYPES:
         log.warning(f"Invalid signal_type: {signal_type}")
         return
+    if urgency not in VALID_URGENCY:
+        log.warning(f"Invalid urgency: {urgency}, defaulting to digest")
+        urgency = "digest"
     SHARED_DIR.mkdir(parents=True, exist_ok=True)
     entry = {
         "ts": datetime.now(timezone.utc).isoformat(),
@@ -100,6 +107,7 @@ def append_signal(from_agent, to_agent, signal_type, signal, confidence=0.8, sou
         "signal": str(signal)[:500],
         "confidence": round(min(max(float(confidence), 0.0), 1.0), 2),
         "consumed": False,
+        "urgency": urgency,
     }
     if source_artifact:
         entry["source_artifact"] = source_artifact
@@ -107,14 +115,25 @@ def append_signal(from_agent, to_agent, signal_type, signal, confidence=0.8, sou
         f.write(json.dumps(entry) + "\n")
 
 
-def read_signals(for_agent, max_age_days=14, mark_consumed=True):
-    """Read unconsumed signals for an agent. If for_agent='all', reads all signals."""
+def read_signals(for_agent, max_age_days=14, mark_consumed=True, session_key=None, action_taken=None):
+    """Read unconsumed signals for an agent. If for_agent='all', reads all signals.
+    
+    Args:
+        for_agent: Target agent name (or 'all')
+        max_age_days: How old signals to consider
+        mark_consumed: Whether to mark as consumed
+        session_key: Session reading the signals (for impact tracking)
+        action_taken: What action was taken based on signals (for impact tracking)
+    """
     path = SHARED_DIR / "signals.jsonl"
+    impact_path = SHARED_DIR / "signal_impact.jsonl"
     if not path.exists():
         return []
     cutoff = datetime.now(timezone.utc) - timedelta(days=max_age_days)
     signals = []
     all_lines = []
+    consumed_count = 0
+    
     with open(path) as f:
         for line in f:
             line = line.strip()
@@ -134,10 +153,32 @@ def read_signals(for_agent, max_age_days=14, mark_consumed=True):
                 signals.append(s)
                 if mark_consumed:
                     s["consumed"] = True
+                    s["consumed_at"] = datetime.now(timezone.utc).isoformat()
+                    s["consumed_by_session"] = session_key
+                    s["action_taken"] = action_taken
+                    consumed_count += 1
+                    
+                    # Write impact entry
+                    impact = {
+                        "signal_ts": s["ts"],
+                        "from": s["from"],
+                        "to": s["to"],
+                        "type": s["type"],
+                        "consumed_at": s["consumed_at"],
+                        "latency_seconds": (datetime.now(timezone.utc) - ts).total_seconds(),
+                        "session_key": session_key,
+                        "action_taken": action_taken,
+                        "tracked_at": datetime.now(timezone.utc).isoformat()
+                    }
+                    with open(impact_path, "a") as impf:
+                        impf.write(json.dumps(impact) + "\n")
             all_lines.append(json.dumps(s))
     if mark_consumed and signals:
         with open(path, "w") as f:
             f.write("\n".join(all_lines) + "\n")
+    
+    if consumed_count > 0:
+        log.info(f"Consumed {consumed_count} signals with impact tracking")
     return signals
 
 
@@ -575,3 +616,184 @@ def get_episode_stats():
                 continue
     stats["avg_duration_hrs"] = round(total_duration / max(stats["total"], 1), 1)
     return stats
+
+def detect_signal_influence(signals, agent_output):
+    """Simple heuristic: if agent output references signal content, assume influence.
+    
+    Returns True if any signal content appears in the agent's output.
+    """
+    if not signals or not agent_output:
+        return False
+    
+    output_lower = agent_output.lower()
+    for s in signals:
+        signal_text = s.get("signal", "").lower()
+        # Check if signal content appears in output (with some flexibility)
+        if signal_text and len(signal_text) > 10:
+            # Check for significant overlap (at least 3 consecutive words)
+            words = signal_text.split()
+            for i in range(len(words) - 2):
+                phrase = " ".join(words[i:i+3])
+                if phrase in output_lower:
+                    return True
+    return False
+
+def mark_signals_consumed(session_key, action_taken, signal_filter=None):
+    """Mark previously-read signals as consumed, with impact data.
+    
+    Call this AFTER the agent has run to determine if signals influenced behavior.
+    
+    Args:
+        session_key: The session that consumed the signals
+        action_taken: Boolean - did the signals influence the agent's output?
+        signal_filter: Optional dict to filter which signals to mark (e.g., {"from": "beren"})
+    """
+    path = SHARED_DIR / "signals.jsonl"
+    impact_path = SHARED_DIR / "signal_impact.jsonl"
+    
+    if not session_key:
+        log.warning("mark_signals_consumed called without session_key")
+        return 0
+    
+    # Read all signals
+    signals = []
+    if path.exists():
+        with open(path) as f:
+            for line in f:
+                if line.strip():
+                    try:
+                        signals.append(json.loads(line))
+                    except:
+                        pass
+    
+    # Filter to signals from this session that haven't been consumed
+    to_consume = []
+    for s in signals:
+        if s.get("consumed"):
+            continue
+        if s.get("session_key") != session_key:
+            continue
+        if signal_filter:
+            match = all(s.get(k) == v for k, v in signal_filter.items())
+            if not match:
+                continue
+        to_consume.append(s)
+    
+    # Write impact entries
+    consumed_count = 0
+    ts = datetime.now(timezone.utc)
+    for s in to_consume:
+        s["consumed"] = True
+        s["consumed_at"] = ts.isoformat()
+        
+        impact = {
+            "signal_ts": s["ts"],
+            "from": s["from"],
+            "to": s["to"],
+            "type": s["type"],
+            "consumed_at": s["consumed_at"],
+            "latency_seconds": (ts - ts).total_seconds(),  # Already consumed earlier
+            "session_key": session_key,
+            "action_taken": action_taken,
+            "tracked_at": ts.isoformat()
+        }
+        with open(impact_path, "a") as impf:
+            impf.write(json.dumps(impact) + "\n")
+        consumed_count += 1
+    
+    # Rewrite signals file
+    with open(path, "w") as f:
+        for s in signals:
+            f.write(json.dumps(s) + "\n")
+    
+    if consumed_count > 0:
+        log.info(f"Marked {consumed_count} signals consumed with action_taken={action_taken}")
+    
+    return consumed_count
+
+def read_signals_with_influence_check(for_agent, agent_output, max_age_days=14):
+    """Read signals and check if they influenced the agent's output.
+    
+    Convenience function that:
+    1. Reads signals (mark_consumed=False)
+    2. Checks if any signals influenced the output
+    3. Marks signals as consumed with the influence result
+    
+    Args:
+        for_agent: Agent name to read signals for
+        agent_output: The text output from the agent (to check for influence)
+        max_age_days: Max age of signals to consider
+    
+    Returns:
+        List of signal dicts (same as read_signals)
+    """
+    # Step 1: Read signals without consuming
+    signals = read_signals(for_agent, max_age_days=max_age_days, mark_consumed=False)
+    
+    if not signals:
+        return []
+    
+    # Step 2: Check if any signal content appears in output
+    action_taken = detect_signal_influence(signals, agent_output)
+    
+    # Step 3: Mark consumed with influence data
+    mark_signals_consumed_for_agent(for_agent, action_taken, signals)
+    
+    return signals
+
+def mark_signals_consumed_for_agent(agent, action_taken, signals):
+    """Mark specific signals as consumed for an agent."""
+    path = SHARED_DIR / "signals.jsonl"
+    impact_path = SHARED_DIR / "signal_impact.jsonl"
+    
+    if not signals:
+        return 0
+    
+    # Read all signals
+    all_signals = []
+    if path.exists():
+        with open(path) as f:
+            for line in f:
+                if line.strip():
+                    try:
+                        all_signals.append(json.loads(line))
+                    except:
+                        pass
+    
+    # Find signals to mark (matching by ts, from, to)
+    signal_ids = set((s.get("ts"), s.get("from"), s.get("to")) for s in signals)
+    ts = datetime.now(timezone.utc)
+    consumed_count = 0
+    
+    for s in all_signals:
+        if s.get("consumed"):
+            continue
+        sid = (s.get("ts"), s.get("from"), s.get("to"))
+        if sid in signal_ids:
+            s["consumed"] = True
+            s["consumed_at"] = ts.isoformat()
+            
+            impact = {
+                "signal_ts": s["ts"],
+                "from": s["from"],
+                "to": s["to"],
+                "type": s["type"],
+                "consumed_at": s["consumed_at"],
+                "latency_seconds": 0,
+                "action_taken": action_taken,
+                "tracked_at": ts.isoformat()
+            }
+            with open(impact_path, "a") as impf:
+                impf.write(json.dumps(impact) + "\n")
+            consumed_count += 1
+    
+    # Rewrite
+    with open(path, "w") as f:
+        for s in all_signals:
+            f.write(json.dumps(s) + "\n")
+    
+    if consumed_count > 0:
+        log.info(f"Marked {consumed_count} signals consumed for {agent}, action_taken={action_taken}")
+    
+    return consumed_count
+
