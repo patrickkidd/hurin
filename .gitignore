@@ -50,6 +50,12 @@ monitor/evolution-actions-queue.json
 monitor/.venv/
 monitor/*.backup
 monitor/*.before-fix
+monitor/task-logs/
+monitor/issue-comment-cursors.json
+monitor/issue-comment-cooldowns.json
+monitor/pr-comment-cursors.json
+monitor/pr-mention-cursors.json
+monitor/pr-comment-cooldowns.json
 
 # === Team-lead runtime (ephemeral) ===
 team-lead/daemon.log
@@ -67,6 +73,12 @@ co-founder/sessions/
 # === Chief of Staff runtime (ephemeral) ===
 chief-of-staff/cron.log
 chief-of-staff/digests/last-session.json
+chief-of-staff/bowen_*.py
+chief-of-staff/bowen_*.txt
+chief-of-staff/bowen_*.log
+
+# === Research data checkouts ===
+btcopilot-sources/
 
 # === Workspace personal/private artifacts ===
 workspace-hurin/theapp/

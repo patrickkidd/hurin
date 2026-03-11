@@ -1,0 +1,8 @@
+All four files written to `/home/hurin/knowledge/clinical/`:
+
+| File | Size Focus |
+|------|-----------|
+| **natural-systems-theory.md** | 8 concepts overview table with descriptions, systems thinking principles (circular causality, process over content, whole > parts), Menninger & NIMH research history, family as unit, observational stance, therapist positioning |
+| **emotional-system.md** | Three-system model (emotional/feeling/intellectual), emotion ≠ feeling distinction, automatic vs. intellectual functioning with clinical examples, subjective vs. objective intellect table, "two-society" framework, therapist emotional contact vs. fusion, body-as-system and cancer speculation |
+| **individuality-togetherness.md** | Both forces defined with evolutionary context, the dynamic balance, fusion vs. pseudo-individuality with clinical examples, reciprocal patterns as togetherness manifestations, anxiety amplification, therapist's own balance, family-of-origin work, group cohesiveness paradox, conflicts of philosophy |
+| **differentiation.md** | Full 0–100 scale with detailed characteristics per range (0-25, 25-50, 50-75, 75-100), solid self vs. pseudo-self, functional vs. basic level, I-position characteristics and examples with tests for genuineness, defining a self process, emotional neutrality, the "love addiction" reframe, schizophrenia therapy example, administrative applications, 8 common misconceptions addressed |
