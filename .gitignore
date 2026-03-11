@@ -50,6 +50,7 @@ monitor/evolution-actions-queue.json
 monitor/.venv/
 monitor/*.backup
 monitor/*.before-fix
+monitor/ci-dashboard.html
 monitor/task-logs/
 monitor/issue-comment-cursors.json
 monitor/issue-comment-cooldowns.json
